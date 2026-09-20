@@ -1,0 +1,369 @@
+"""
+Summary:
+    fws_sqlite_viewer アプリのビジネスロジックモジュール。
+Description:
+    SQLiteデータベースへの接続およびクエリ実行、スキーマ取得を行います。
+Attachment:
+    なし
+"""
+import sqlite3
+import time
+import re
+import csv
+from typing import List, Optional, Dict
+from pathlib import Path
+from fws_apps.tkinter.fws_sqlite_viewer.businesses.entity import fws_sqlite_viewer_entity
+from fws_apps.tkinter.fws_sqlite_viewer.businesses.dto import fws_sqlite_viewer_dto_query_result
+from fws_apps.tkinter.fws_sqlite_viewer.businesses.dto import fws_sqlite_viewer_dto_table_schema
+
+class FwsSqliteViewerBusiness:
+    """
+    Summary:
+        データベース操作を担うビジネスロジッククラス。
+    Description:
+        DBの開閉、テーブル一覧取得、スキーマ取得、SQL実行処理を提供します。
+    """
+
+    #region Constructor
+    def __init__(self) -> None:
+        """
+        Summary:
+            コンストラクタ。
+        Description:
+            変数を初期化します。
+        Args:
+            なし
+        Returns:
+            None - 戻り値なし。
+        """
+        self.fws_sqlite_viewer_entity_obj: fws_sqlite_viewer_entity.FwsSqliteViewerEntity = fws_sqlite_viewer_entity.FwsSqliteViewerEntity()
+        """fws_sqlite_viewer_entity.FwsSqliteViewerEntity - エンティティ"""
+        
+        self.connection: Optional[sqlite3.Connection] = None
+        """Optional[sqlite3.Connection] - SQLiteコネクション"""
+    #endregion
+
+    #region Public Methods
+    def connect(self, db_path: str) -> None:
+        """
+        Summary:
+            指定されたパスのSQLiteデータベースに接続します。
+        Description:
+            既に接続がある場合は閉じ、新しい接続を開きます。
+        Args:
+            db_path: str - データベースファイルのパス文字列。
+        Returns:
+            None - 戻り値なし。
+        """
+        self.close()
+        # パスが存在しなくても新規作成を避ける場合は os.path.exists などでチェックが必要ですが
+        # sqlite3はデフォルトで新規作成してしまうため、アプリ側での事前チェックを想定します。
+        # 今回の要件（Viewer）として、指定されたパスに接続します。
+        self.connection = sqlite3.connect(db_path)
+        self.fws_sqlite_viewer_entity_obj.current_db_path = Path(db_path)
+
+    def close(self) -> None:
+        """
+        Summary:
+            データベース接続を閉じます。
+        Description:
+            コネクションが存在する場合、クローズ処理を行います。
+        Args:
+            なし
+        Returns:
+            None - 戻り値なし。
+        """
+        if self.connection:
+            self.connection.close()
+            self.connection = None
+        self.fws_sqlite_viewer_entity_obj.current_db_path = None
+
+    def get_tables(self) -> Dict[str, List[str]]:
+        """
+        Summary:
+            接続されているすべてのデータベース内のテーブル一覧を取得します。
+        Description:
+            PRAGMA database_list でDB一覧を取得し、各DBのsqlite_masterからテーブルを抽出して返します。
+        Args:
+            なし
+        Returns:
+            Dict[str, List[str]] - データベース名(エイリアス)をキーとするテーブル名のリスト。
+        """
+        if not self.connection:
+            return {}
+            
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        try:
+            # 接続されている全データベースのリストを取得
+            cursor.execute("PRAGMA database_list;")
+            db_list = cursor.fetchall()
+            
+            tables_dict: Dict[str, List[str]] = {}
+            for db_seq, db_name, db_file in db_list:
+                # 各データベースのテーブル一覧を取得
+                # temp などの内部DBや、スキーマがないDBもあるため例外対応
+                try:
+                    cursor.execute(f"SELECT name FROM {db_name}.sqlite_master WHERE type='table' ORDER BY name;")
+                    tables = [row[0] for row in cursor.fetchall()]
+                    tables_dict[db_name] = tables
+                except sqlite3.Error:
+                    pass
+            return tables_dict
+        finally:
+            cursor.close()
+
+    def attach_db(self, db_path: str, alias: str) -> None:
+        """
+        Summary:
+            指定されたデータベースを現在のアタッチメントとして追加します。
+        Description:
+            ATTACH DATABASE 文を発行して接続に新しいDBを追加します。
+        Args:
+            db_path: str - データベースファイルのパス
+            alias: str - アタッチ時のエイリアス名
+        Returns:
+            None - 戻り値なし。
+        """
+        if not self.connection:
+            return
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(f"ATTACH DATABASE ? AS {alias};", (db_path,))
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def detach_db(self, alias: str) -> None:
+        """
+        Summary:
+            指定されたエイリアスのデータベースをデタッチします。
+        Description:
+            DETACH DATABASE 文を発行して、アタッチされたDBを切り離します。
+        Args:
+            alias: str - デタッチするエイリアス名
+        Returns:
+            None - 戻り値なし。
+        """
+        if not self.connection:
+            return
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(f"DETACH DATABASE {alias};")
+            self.connection.commit()
+        finally:
+            cursor.close()
+
+    def get_table_schema(self, table_name: str, alias: str = "main") -> List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema]:
+        """
+        Summary:
+            指定されたテーブルのスキーマ情報を取得します。
+        Description:
+            PRAGMA <alias>.table_info() を使用してカラム定義等を取得します。
+        Args:
+            table_name: str - スキーマを取得するテーブル名。
+            alias: str - データベースエイリアス名（デフォルト: "main"）。
+        Returns:
+            List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema] - スキーマDTOのリスト。
+        """
+        if not self.connection:
+            return []
+            
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        try:
+            cursor.execute(f"PRAGMA {alias}.table_info('{table_name}');")
+            rows = cursor.fetchall()
+            schema_list: List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema] = []
+            for row in rows:
+                dto = fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema(
+                    cid=row[0],
+                    name=row[1],
+                    type_name=row[2],
+                    notnull=row[3],
+                    dflt_value=row[4],
+                    pk=row[5]
+                )
+                schema_list.append(dto)
+            return schema_list
+        finally:
+            cursor.close()
+
+    def _split_queries(self, sql_script: str) -> List[str]:
+        """
+        Summary:
+            クエリ文字列をセミコロンで分割します。
+        Description:
+            シングルクォーテーション('')またはダブルクォーテーション("")に囲まれた
+            セミコロンは区切り文字として扱いません。
+        Args:
+            sql_script: str - 分割するSQL文字列全体。
+        Returns:
+            List[str] - 分割された個別のSQL文のリスト。空文字は除外します。
+        """
+        queries = []
+        current_query = []
+        in_single_quote = False
+        in_double_quote = False
+        
+        for char in sql_script:
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+                current_query.append(char)
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+                current_query.append(char)
+            elif char == ';' and not in_single_quote and not in_double_quote:
+                queries.append("".join(current_query).strip())
+                current_query = []
+            else:
+                current_query.append(char)
+                
+        # 最後のセミコロンがない場合のクエリを追加
+        if current_query:
+            last_query = "".join(current_query).strip()
+            if last_query:
+                queries.append(last_query)
+                
+        # 空のクエリを除外して返す
+        return [q for q in queries if q]
+
+    def execute_query(self, sql_query: str) -> fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult:
+        """
+        Summary:
+            任意のSQLクエリ（複数クエリ対応）を実行します。
+        Description:
+            セミコロン区切りの複数クエリを順番に実行します。
+            最後に実行されたSELECT系の結果行、およびすべてのクエリの実行履歴（件数）を返します。
+            エラー発生時は全体をロールバックしてメッセージを返します。
+        Args:
+            sql_query: str - 実行するSQL文。
+        Returns:
+            fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult - 実行結果を格納したDTO。
+        """
+        result_dto: fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult = fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult()
+        
+        if not self.connection:
+            result_dto.error_message = "Not connected to a database."
+            return result_dto
+            
+        queries = self._split_queries(sql_query)
+        if not queries:
+            result_dto.error_message = "Query is empty."
+            return result_dto
+
+        start_time: float = time.perf_counter()
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        
+        last_columns = []
+        last_rows = []
+        has_select_result = False
+
+        try:
+            query_queue = list(queries)
+            while query_queue:
+                q = query_queue.pop(0)
+                # 独自コマンド検知のために、コメントを除去した文字列を作成
+                cleaned_q = re.sub(r"--.*$", "", q, flags=re.MULTILINE)
+                cleaned_q = re.sub(r"/\*.*?\*/", "", cleaned_q, flags=re.DOTALL)
+                cleaned_q = cleaned_q.strip()
+                
+                # sourceコマンドの検知
+                match = re.match(r"^\s*source\s+['\"]?(.+?)['\"]?\s*$", cleaned_q, re.IGNORECASE)
+                if match:
+                    file_path = match.group(1)
+                    path_obj = Path(file_path)
+                    if not path_obj.is_absolute() and self.fws_sqlite_viewer_entity_obj.current_db_path:
+                        db_dir = self.fws_sqlite_viewer_entity_obj.current_db_path.parent
+                        if (db_dir / path_obj).exists():
+                            path_obj = db_dir / path_obj
+                    if not path_obj.exists() or not path_obj.is_file():
+                        raise sqlite3.Error(f"Source file not found: {path_obj}")
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        sub_sql = f.read()
+                    if sub_sql.strip():
+                        sub_queries = self._split_queries(sub_sql)
+                        query_queue = sub_queries + query_queue
+                    continue
+
+                # loadコマンドの検知
+                match_load = re.match(r"^\s*load\s+['\"]?(.+?)['\"]?\s+into\s+([a-zA-Z0-9_]+)(?:\s+(with\s+header|no\s+header))?\s*$", cleaned_q, re.IGNORECASE)
+                if match_load:
+                    file_path = match_load.group(1)
+                    table_name = match_load.group(2)
+                    header_opt = match_load.group(3)
+                    
+                    path_obj = Path(file_path)
+                    if not path_obj.is_absolute() and self.fws_sqlite_viewer_entity_obj.current_db_path:
+                        db_dir = self.fws_sqlite_viewer_entity_obj.current_db_path.parent
+                        if (db_dir / path_obj).exists():
+                            path_obj = db_dir / path_obj
+                    if not path_obj.exists() or not path_obj.is_file():
+                        raise sqlite3.Error(f"Load file not found: {path_obj}")
+
+                    delimiter = '\t' if path_obj.suffix.lower() == '.tsv' else ','
+                    
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        reader = csv.reader(f, delimiter=delimiter)
+                        
+                        # デフォルトはヘッダースキップ（with header）。明示的に 'no header' が指定された場合はスキップしない
+                        if header_opt and header_opt.lower() == 'no header':
+                            pass
+                        else:
+                            try:
+                                next(reader)
+                            except StopIteration:
+                                pass
+                                
+                        try:
+                            first_row = next(reader)
+                        except StopIteration:
+                            result_dto.execution_history.append((q, 0))
+                            continue
+                            
+                        placeholders = ",".join(["?"] * len(first_row))
+                        insert_sql = f"INSERT INTO {table_name} VALUES ({placeholders})"
+                        
+                        def row_generator():
+                            yield first_row
+                            yield from reader
+                            
+                        cursor.executemany(insert_sql, row_generator())
+                        result_dto.execution_history.append((q, cursor.rowcount))
+                    continue
+
+                cursor.execute(q)
+                
+                # SELECT文の場合はデータが存在する
+                if cursor.description:
+                    last_columns = [description[0] for description in cursor.description]
+                    last_rows = cursor.fetchall()
+                    has_select_result = True
+                    result_dto.execution_history.append((q, len(last_rows)))
+                else:
+                    # INSERT, UPDATE, DELETE などの場合は変更行数を取得
+                    rowcount = cursor.rowcount
+                    result_dto.execution_history.append((q, rowcount))
+            
+            # すべて成功した場合のみコミット（トランザクション制御されていない場合を想定）
+            self.connection.commit()
+            
+            if has_select_result:
+                result_dto.columns = last_columns
+                result_dto.rows = last_rows
+                result_dto.rowcount = len(last_rows)
+            else:
+                # 最後のクエリのrowcount、または更新系の合計値を設定
+                # （ただし詳細履歴は execution_history にあるため、ここでは最後のrowcountを代表としてセット）
+                result_dto.rowcount = cursor.rowcount
+                
+        except sqlite3.Error as e:
+            result_dto.error_message = str(e)
+            if self.connection:
+                self.connection.rollback()
+        finally:
+            cursor.close()
+            
+        end_time: float = time.perf_counter()
+        result_dto.execution_time_ms = (end_time - start_time) * 1000.0
+        
+        return result_dto
+    #endregion
