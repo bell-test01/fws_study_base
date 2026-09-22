@@ -48,38 +48,78 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter
     )
     
-    parser.add_argument("-p", "--path", required=True, help="出力先ディレクトリのルートパス (必須)")
-    parser.add_argument("-n", "--app-name", required=True, help="アプリケーション名（例: fws_sample_app） (必須)")
+    parser.add_argument("-p", "--path", help="出力先ディレクトリのルートパス")
+    parser.add_argument("-n", "--app-name", help="アプリケーション名（例: fws_sample_app）")
     parser.add_argument("-f", "--file", help="読み込む構造定義ファイル (git_structure.txt等)")
-    parser.add_argument("-t", "--type", choices=["gui", "cli"], default="gui", help="生成するテンプレートの種類 (デフォルト: gui)")
-
-    # 引数なしで実行された場合はヘルプを表示して終了
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+    parser.add_argument("-t", "--type", choices=["gui", "cli"], help="生成するテンプレートの種類 (デフォルト: gui)")
 
     args: argparse.Namespace = parser.parse_args()
 
+    out_path_str: str | None = args.path
+    app_name_str: str | None = args.app_name
+    template_type: str | None = args.type
+    structure_file: str | None = args.file
+
+    # 引数が不足している場合は対話式に入力させる
+    if not structure_file and not template_type:
+        structure_file = input("読み込む構造定義ファイル(git_structure.txt等)のパスを入力してください（使用しない場合は空のままEnter）: ").strip(' "\'')
+        if not structure_file:
+            mode = input("生成モードを選択してください (1: GUIテンプレート, 2: CLIテンプレート): ").strip()
+            if mode == "2":
+                template_type = "cli"
+            else:
+                if mode != "1":
+                    print("無効な選択です。デフォルトのGUIテンプレートを使用します。")
+                template_type = "gui"
+
+    if not template_type:
+        template_type = "gui"
+
+    if not out_path_str:
+        out_path_str = input("出力先ディレクトリのルートパスを入力してください: ").strip(' "\'')
+
+    # 構造定義ファイルを使用しない場合のみ、アプリケーション名を聞く
+    if not structure_file and not app_name_str:
+        app_name_str = input("アプリケーション名を入力してください（例: fws_sample_app）: ").strip()
+
+    if not app_name_str:
+        app_name_str = ""
+
+    if not out_path_str or (not structure_file and not app_name_str):
+        print("出力先ディレクトリは必須です。（テンプレート生成の場合はアプリケーション名も必須です）", file=sys.stderr)
+        input("\nEnterキーを押して終了してください...")
+        sys.exit(1)
+
     # 出力先パスの検証と作成
-    output_path: Path = Path(args.path).resolve()
+    output_path: Path = Path(out_path_str).resolve()
     if not output_path.exists():
         print(f"Creating output root directory: {output_path}")
         output_path.mkdir(parents=True, exist_ok=True)
 
+    # data/.templateignore が存在するか確認
+    ignore_file_path: str | None = None
+    script_dir: Path = Path(__file__).parent.resolve()
+    default_ignore_file: Path = script_dir / "data" / ".templateignore"
+    if default_ignore_file.exists() and default_ignore_file.is_file():
+        ignore_file_path = str(default_ignore_file)
+
     fws_apps_template_generator_core_obj: FwsAppsTemplateGeneratorCore = FwsAppsTemplateGeneratorCore(
         output_path=str(output_path),
-        app_name=args.app_name,
-        template_type=args.type
+        app_name=app_name_str,
+        template_type=template_type,
+        ignore_file=ignore_file_path
     )
 
     try:
-        if args.file:
-            fws_apps_template_generator_core_obj.generate_from_structure_file(args.file)
+        if structure_file:
+            fws_apps_template_generator_core_obj.generate_from_structure_file(structure_file)
         else:
             fws_apps_template_generator_core_obj.generate_from_template()
         print("Generation completed successfully.")
+        input("\n処理が完了しました。Enterキーを押して終了してください...")
     except Exception as e:
         print(f"Error during generation: {e}", file=sys.stderr)
+        input("\nエラーが発生しました。Enterキーを押して終了してください...")
         sys.exit(1)
 
 

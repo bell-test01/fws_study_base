@@ -7,6 +7,7 @@ Description:
 Attachment:
     docs_fws_apps_template_generator/final_specification.md
 """
+import fnmatch
 import re
 from pathlib import Path
 
@@ -23,7 +24,7 @@ class FwsAppsTemplateGeneratorCore:
         指定された出力先ディレクトリに実体（空ファイル/ディレクトリ）を作成します。
     """
     # region Constructor
-    def __init__(self, output_path: str, app_name: str, template_type: str = "gui") -> None:
+    def __init__(self, output_path: str, app_name: str, template_type: str = "gui", ignore_file: str | None = None) -> None:
         """
         Summary:
             クラスの初期化を行います。
@@ -31,12 +32,23 @@ class FwsAppsTemplateGeneratorCore:
             output_path: str - 出力先ディレクトリのパス。
             app_name: str - アプリケーション名。
             template_type: str - テンプレートの種類 ("gui" または "cli")。
+            ignore_file: str | None - 除外リストファイルのパス。
         Returns:
             None - 戻り値なし。
         """
         self.output_path = Path(output_path).resolve()
         self.app_name = app_name
         self.template_type: str = template_type
+        
+        self.exclude_list: list[str] = []
+        if ignore_file:
+            ignore_path = Path(ignore_file).resolve()
+            if ignore_path.exists():
+                with open(ignore_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            self.exclude_list.append(line)
     # endregion
 
     # region Public Methods
@@ -64,6 +76,14 @@ class FwsAppsTemplateGeneratorCore:
             rel_path: str = item.replace("{app_name}", self.app_name)
             
             if self._is_excluded(rel_path):
+                # ファイル自体は除外するが、親ディレクトリが除外対象でなければ作成する
+                target_path: Path = self.output_path / rel_path
+                if not rel_path.endswith('/'):
+                    parent_rel = str(Path(rel_path).parent).replace('\\', '/')
+                    if parent_rel != "." and not self._is_excluded(parent_rel):
+                        if not target_path.parent.exists():
+                            target_path.parent.mkdir(parents=True, exist_ok=True)
+                            print(f"Created directory: {target_path.parent}")
                 continue
 
             full_path: Path = self.output_path / rel_path
@@ -81,10 +101,10 @@ class FwsAppsTemplateGeneratorCore:
     def generate_from_structure_file(self, file_path: str) -> None:
         """
         Summary:
-            ツリー形式のテキストファイルからファイル構成を生成します。
+            フラットなパスリスト形式のテキストファイルからファイル構成を生成します。
         Description:
-            git_structure.txt などの形式で書かれたファイルパス一覧を読み取り、
-            ディレクトリ階層を計算しながら生成処理を行います。
+            git_structure.txt などの形式で書かれた相対パス一覧を読み取り、
+            ディレクトリおよびファイル構成を生成します。
         Args:
             file_path: str - 読み込む構造定義ファイルのパス。
         Returns:
@@ -99,71 +119,37 @@ class FwsAppsTemplateGeneratorCore:
         with open(structure_file, 'r', encoding='utf-8') as f:
             lines: list[str] = f.readlines()
 
-        # ツリー構造のパース用スタック
-        # (レベル, Path) のタプルを保持
-        stack: list[tuple[int, Path]] = []
-
         for line in lines:
-            line = line.rstrip('\n')
-            if not line.strip():
+            line = line.rstrip('\n').strip()
+            if not line:
                 continue
 
-            # 行の先頭から、ツリーのインデント部分と要素名を分離
-            # ├──, └──, │   などの文字とスペースをマッチさせる
-            match: re.Match[str] | None = re.match(r'^([│├└─\s]*)(.*)$', line)
-            if not match:
-                continue
-
-            indent: str
-            name: str
-            indent, name = match.groups()
-            name = name.strip()
-            if not name:
-                continue
-                
-            # 文字幅からレベルを計算 (通常4文字単位)
-            # ただし、最初のルート要素はインデントなし
-            level: int = len(indent) // 4
-            
-            # ルートディレクトリ名自体も置換（もし {app_name}等が含まれていれば）
-            # 基本的には git_structure.txt の内容はそのまま使う
-            
-            # ディレクトリかどうかの判定 (末尾が / )
-            is_dir: bool = name.endswith('/')
-            if is_dir:
-                name = name[:-1]
-
-            # スタックの調整
-            while stack and stack[-1][0] >= level:
-                stack.pop()
-
-            current_path: Path
-            if not stack:
-                # ルート要素
-                current_path = self.output_path / name
-            else:
-                # 親パスに連結
-                parent_path: Path = stack[-1][1]
-                current_path = parent_path / name
+            current_path: Path = self.output_path / line
 
             # 除外判定
             # ルートパスからの相対パスで判定する
             try:
                 rel_from_root = current_path.relative_to(self.output_path)
-                if self._is_excluded(str(rel_from_root).replace('\\', '/')):
+                rel_path_str = str(rel_from_root).replace('\\', '/')
+                if self._is_excluded(rel_path_str):
+                    # ファイル自体は除外するが、親ディレクトリが除外対象でなければ作成する
+                    if not line.endswith('/'):
+                        parent_rel = str(Path(rel_path_str).parent).replace('\\', '/')
+                        if parent_rel != "." and not self._is_excluded(parent_rel):
+                            if not current_path.parent.exists():
+                                current_path.parent.mkdir(parents=True, exist_ok=True)
+                                print(f"Created directory: {current_path.parent}")
                     continue
             except ValueError:
                 pass
 
-            if is_dir:
+            if line.endswith('/'):
                 current_path.mkdir(parents=True, exist_ok=True)
                 print(f"Created directory: {current_path}")
-                stack.append((level, current_path))
             else:
                 current_path.parent.mkdir(parents=True, exist_ok=True)
                 current_path.touch(exist_ok=True)
                 print(f"Created file: {current_path}")
-                # ファイルは子を持たないのでスタックに積まない
     # endregion
 
     # region Private Methods
@@ -172,19 +158,30 @@ class FwsAppsTemplateGeneratorCore:
         Summary:
             除外リストに含まれるパスかどうかを判定します。
         Description:
-            プレースホルダーを置換したパスが、設定された除外リストのいずれかに一致するか確認します。
+            設定された除外パターンとパスを比較します。
+            パス全体とのパターンマッチ、およびパスの各構成要素とのマッチを行います。
         Args:
             path_str: str - 判定対象の相対パス。
         Returns:
             bool - 除外対象であれば True、そうでなければ False。
         """
-        for exclude in const.EXCLUDE_LIST:
-            # プレースホルダーを置換
-            resolved_exclude: str = exclude.replace("{app_name}", self.app_name)
-            # パスの一部に除外文字列が含まれていればTrue（簡易的な判定）
-            # ただし厳密にはパスの各要素と比較する方が安全
-            parts: tuple[str, ...] = Path(path_str).parts
-            if resolved_exclude in parts:
+        path = Path(path_str)
+        path_str_fwd = str(path).replace('\\', '/')
+        
+        for exclude in self.exclude_list:
+            exclude = exclude.strip()
+            if not exclude:
+                continue
+
+            # 1. フルパス（相対パス）としてのマッチング
+            if fnmatch.fnmatch(path_str_fwd, exclude):
                 return True
+                
+            # 2. パスの各構成要素に対するマッチング
+            clean_exclude = exclude.strip('/')
+            for part in path.parts:
+                if fnmatch.fnmatch(part, clean_exclude):
+                    return True
+
         return False
     # endregion

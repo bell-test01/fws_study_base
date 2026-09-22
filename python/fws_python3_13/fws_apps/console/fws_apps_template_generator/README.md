@@ -17,7 +17,10 @@ python fws_apps_template_generator.py -p ./my_gui_app -n my_gui_app
 python fws_apps_template_generator.py -p ./my_cli_app -n my_cli_app -t cli
 
 # 既存の git_structure.txt などの構造定義ファイルを元に展開する
-python fws_apps_template_generator.py -p ./custom_app -n custom_app -f ./path/to/git_structure.txt
+python fws_apps_template_generator.py -p ./custom_app -f ./path/to/git_structure.txt
 ```
+
+## 除外設定（.templateignore）
+`data/.templateignore` にファイルパターン（ワイルドカード対応）を記述することで、指定したファイルやフォルダの生成を自動的にスキップできます。除外されたファイルの親ディレクトリは空フォルダとして作成されます。
 
 詳細は `docs_fws_apps_template_generator/final_specification.md` を参照してください。

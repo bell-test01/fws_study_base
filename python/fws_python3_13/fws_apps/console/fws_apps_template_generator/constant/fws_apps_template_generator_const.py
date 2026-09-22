@@ -7,13 +7,8 @@ Attachment:
     docs_fws_apps_template_generator/final_specification.md
 """
 
-"""list[str] - ユーザー指定の除外リスト"""
-EXCLUDE_LIST = [
-    "git_structure.txt",
-    ".gitkeep",
-    "docs_{app_name}",
-    "tests"
-]
+APP_VERSION: str = "2.0.0.0"
+"""str - アプリケーションのバージョン情報"""
 
 """list[str] - GUI用テンプレート構造 (プレースホルダー {app_name} を含む)"""
 GUI_TEMPLATE_STRUCTURE = [
