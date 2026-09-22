@@ -9,7 +9,7 @@ Attachment:
     なし
 """
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, ttk, messagebox
 from pathlib import Path
 import re
 import json
@@ -18,6 +18,8 @@ from typing import List, Optional, Dict
 
 from fws_apps.tkinter.fws_sqlite_viewer.views.view import fws_sqlite_viewer_view
 from fws_apps.tkinter.fws_sqlite_viewer.views.event import fws_sqlite_viewer_history_event
+from fws_apps.tkinter.fws_sqlite_viewer.views.event import fws_sqlite_viewer_create_table_event
+from fws_apps.tkinter.fws_sqlite_viewer.views.event import fws_sqlite_viewer_bulk_insert_event
 from fws_apps.tkinter.fws_sqlite_viewer.views.logic import fws_sqlite_viewer_logic
 from fws_apps.tkinter.fws_sqlite_viewer.views.models import fws_sqlite_viewer_model_query_result
 from fws_apps.tkinter.fws_sqlite_viewer.views.models import fws_sqlite_viewer_model_table_schema
@@ -961,7 +963,9 @@ class FwsSqliteViewerEvent:
             
             # DBノードではテーブル用メニューを無効化
             try:
+                menu.entryconfigure("Create New Table", state="normal", command=lambda a=alias: self._show_create_table_dialog(a))
                 menu.entryconfigure("Generate Recreate Script", state="disabled")
+                menu.entryconfigure("Bulk Insert (Import)", state="disabled")
             except tk.TclError:
                 pass # メニューが存在しない場合は無視
                 
@@ -973,11 +977,63 @@ class FwsSqliteViewerEvent:
             menu.entryconfigure("Detach Database", state="disabled")
             
             try:
+                menu.entryconfigure("Create New Table", state="disabled")
                 menu.entryconfigure("Generate Recreate Script", state="normal", command=lambda t=table_name, a=alias: self._generate_recreate_script(t, a))
+                menu.entryconfigure("Bulk Insert (Import)", state="normal", command=lambda t=table_name, a=alias: self._show_bulk_insert_dialog(t, a))
             except tk.TclError:
                 pass
                 
             menu.post(event.x_root, event.y_root)
+
+
+    def _refresh_after_insert(self, table_name: str) -> None:
+        """
+        Summary:
+            バルクインサート成功後、現在表示中のクエリが該当テーブルのものであれば再実行します。
+        Args:
+            table_name: str - 対象テーブル名
+        """
+        current_query = self._fws_sqlite_viewer_view_obj.txt_sql.get("1.0", tk.END).strip()
+        if f"FROM {table_name}" in current_query or f"FROM \"{table_name}\"" in current_query:
+            self._execute_query()
+
+    def _show_bulk_insert_dialog(self, table_name: str, alias: str) -> None:
+        """
+        Summary:
+            バルクインサート設定ダイアログを表示します。
+        Args:
+            table_name: str - 対象テーブル名
+            alias: str - 対象DBエイリアス
+        """
+        fws_sqlite_viewer_bulk_insert_event.FwsSqliteViewerBulkInsertEvent(
+            parent_view=self._fws_sqlite_viewer_view_obj,
+            table_name=table_name,
+            alias=alias,
+            logic_obj=self._fws_sqlite_viewer_logic_obj,
+            on_success_callback=self._refresh_after_insert
+        )
+
+    def _show_create_table_dialog(self, alias: str) -> None:
+        """
+        Summary:
+            新規テーブル作成ダイアログを表示します。
+        Args:
+            alias: str - 対象DBエイリアス
+        """
+        def on_create_success(sql: str) -> None:
+            result = self._fws_sqlite_viewer_logic_obj.run_query(sql)
+            # 古いDTOの場合はis_successがないことがあるため、エラーメッセージの有無もチェック
+            if (hasattr(result, "is_success") and not result.is_success) or (hasattr(result, "error_message") and result.error_message):
+                tk.messagebox.showerror("Execution Error", result.error_message, parent=self._fws_sqlite_viewer_view_obj)
+            else:
+                tk.messagebox.showinfo("Success", "Table created successfully.", parent=self._fws_sqlite_viewer_view_obj)
+                self._refresh_db_tables()
+
+        fws_sqlite_viewer_create_table_event.FwsSqliteViewerCreateTableEvent(
+            master=self._fws_sqlite_viewer_view_obj,
+            alias=alias,
+            on_success_callback=on_create_success
+        )
 
     def _refresh_db_tables(self) -> None:
         """

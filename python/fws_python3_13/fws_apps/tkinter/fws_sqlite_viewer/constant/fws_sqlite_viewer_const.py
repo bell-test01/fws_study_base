@@ -13,7 +13,7 @@ APP_DIR: Path = Path(__file__).resolve().parent.parent
 """Path - アプリケーションのルートディレクトリ"""
 
 # アプリケーションのバージョン情報
-APP_VERSION: str = "1.3.0.1"
+APP_VERSION: str = "1.4.0.0"
 """str - アプリケーションのバージョン情報"""
 
 # デフォルトのデータ・出力ディレクトリ

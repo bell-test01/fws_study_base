@@ -93,8 +93,10 @@ class FwsSqliteViewerView(tk.Tk):
         self.menu_tables: tk.Menu = tk.Menu(self.trv_tables, tearoff=0)
         self.menu_tables.add_command(label="Refresh", command=lambda: None) # Event層で上書き
         self.menu_tables.add_command(label="Detach Database", command=lambda: None) # Event層で上書き
+        self.menu_tables.add_command(label="Create New Table", command=lambda: None) # Event層で上書き
         self.menu_tables.add_separator()
         self.menu_tables.add_command(label="Generate Recreate Script", command=lambda: None) # Event層で上書き
+        self.menu_tables.add_command(label="Bulk Insert (Import)", command=lambda: None) # Event層で上書き
         
         # 左下: テーブルスキーマ詳細
         self.frm_schema: ttk.LabelFrame = ttk.LabelFrame(self.pw_left, text="Schema Details")

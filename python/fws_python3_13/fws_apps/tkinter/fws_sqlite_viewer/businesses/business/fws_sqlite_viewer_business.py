@@ -259,6 +259,70 @@ class FwsSqliteViewerBusiness:
         finally:
             cursor.close()
 
+    def bulk_insert(self, table_name: str, alias: str, data: str, is_file: bool, delimiter: str, has_header: bool) -> int:
+        """
+        Summary:
+            ファイルまたは文字列からデータを読み取り、指定されたテーブルへバルクインサートします。
+        Description:
+            csv.readerを用いてデータを解析し、executemanyで一括挿入します。
+        Args:
+            table_name: str - 挿入先のテーブル名
+            alias: str - データベースエイリアス名
+            data: str - ファイルパスまたは生データ文字列
+            is_file: bool - dataがファイルパスかどうかのフラグ
+            delimiter: str - 区切り文字 (カンマ、タブなど)
+            has_header: bool - 先頭行がヘッダーであるかどうか
+        Returns:
+            int - 挿入された行数
+        """
+        if not self.connection:
+            raise sqlite3.Error("Not connected to a database.")
+
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        f_handle = None
+        try:
+            if is_file:
+                path_obj = Path(data)
+                if not path_obj.exists() or not path_obj.is_file():
+                    raise sqlite3.Error(f"Import file not found: {data}")
+                f_handle = open(path_obj, "r", encoding="utf-8")
+                reader = csv.reader(f_handle, delimiter=delimiter)
+            else:
+                import io
+                f_handle = io.StringIO(data)
+                reader = csv.reader(f_handle, delimiter=delimiter)
+
+            if has_header:
+                try:
+                    next(reader)
+                except StopIteration:
+                    pass
+
+            try:
+                first_row = next(reader)
+            except StopIteration:
+                return 0
+
+            placeholders = ",".join(["?"] * len(first_row))
+            target_table = f'"{alias}"."{table_name}"' if alias != "main" else f'"{table_name}"'
+            insert_sql = f"INSERT INTO {target_table} VALUES ({placeholders})"
+
+            def row_generator():
+                yield first_row
+                yield from reader
+
+            cursor.executemany(insert_sql, row_generator())
+            self.connection.commit()
+            return cursor.rowcount
+        except Exception as e:
+            if self.connection:
+                self.connection.rollback()
+            raise e
+        finally:
+            if f_handle:
+                f_handle.close()
+            cursor.close()
+
     def _split_queries(self, sql_script: str) -> List[str]:
         """
         Summary:
