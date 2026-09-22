@@ -30,8 +30,10 @@ def main() -> None:
     """
     try:
         fws_sqlite_viewer_event_obj: fws_sqlite_viewer_event.FwsSqliteViewerEvent = fws_sqlite_viewer_event.FwsSqliteViewerEvent()
-        fws_sqlite_viewer_event_obj.fws_sqlite_viewer_view_obj.mainloop()
+        """fws_sqlite_viewer_event.FwsSqliteViewerEvent - イベントオブジェクト"""
+        fws_sqlite_viewer_event_obj.start()
     except Exception as e:
+        """Exception - 実行時に発生した例外オブジェクト"""
         print(f"Fatal error in application: {e}")
 
 if __name__ == "__main__":

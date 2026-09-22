@@ -86,13 +86,15 @@ class FwsSqliteViewerView(tk.Tk):
         self.trv_tables: ttk.Treeview = ttk.Treeview(self.frm_tables, show="tree", selectmode="browse")
         scr_tables: ttk.Scrollbar = ttk.Scrollbar(self.frm_tables, orient=tk.VERTICAL, command=self.trv_tables.yview)
         self.trv_tables.configure(yscrollcommand=scr_tables.set)
-        self.trv_tables.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scr_tables.pack(side=tk.RIGHT, fill=tk.Y)
+        self.trv_tables.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # テーブル用右クリックメニュー
         self.menu_tables: tk.Menu = tk.Menu(self.trv_tables, tearoff=0)
         self.menu_tables.add_command(label="Refresh", command=lambda: None) # Event層で上書き
         self.menu_tables.add_command(label="Detach Database", command=lambda: None) # Event層で上書き
+        self.menu_tables.add_separator()
+        self.menu_tables.add_command(label="Generate Recreate Script", command=lambda: None) # Event層で上書き
         
         # 左下: テーブルスキーマ詳細
         self.frm_schema: ttk.LabelFrame = ttk.LabelFrame(self.pw_left, text="Schema Details")
@@ -110,8 +112,8 @@ class FwsSqliteViewerView(tk.Tk):
         
         scr_schema: ttk.Scrollbar = ttk.Scrollbar(self.frm_schema, orient=tk.VERTICAL, command=self.trv_schema.yview)
         self.trv_schema.configure(yscrollcommand=scr_schema.set)
-        self.trv_schema.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scr_schema.pack(side=tk.RIGHT, fill=tk.Y)
+        self.trv_schema.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 右ペイン
         self.pw_right: ttk.PanedWindow = ttk.PanedWindow(self.pw_main, orient=tk.VERTICAL)
@@ -130,14 +132,14 @@ class FwsSqliteViewerView(tk.Tk):
         
         self.btn_run_query.pack(side=tk.BOTTOM, anchor=tk.E, pady=5, padx=5)
         scr_sql_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.txt_sql.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scr_sql_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.txt_sql.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 右下: 結果データグリッド
         self.frm_results: ttk.LabelFrame = ttk.LabelFrame(self.pw_right, text="Query Results")
         self.pw_right.add(self.frm_results, weight=3)
         
-        self.lbl_status: ttk.Label = ttk.Label(self.frm_results, text="Status: Ready")
+        self.lbl_status: ttk.Label = ttk.Label(self.frm_results, text=fws_sqlite_viewer_const.STATUS_MSG_READY)
         self.lbl_status.pack(side=tk.TOP, fill=tk.X, anchor=tk.W, pady=(0, 2))
         
         self.trv_results: ttk.Treeview = ttk.Treeview(self.frm_results, show="headings", selectmode="extended")
@@ -146,12 +148,12 @@ class FwsSqliteViewerView(tk.Tk):
         self.trv_results.configure(yscrollcommand=scr_results_y.set, xscrollcommand=scr_results_x.set)
         
         scr_results_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.trv_results.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scr_results_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.trv_results.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # ストライプ行用のタグ設定
-        self.trv_schema.tag_configure("even", background="#f0f0f0")
-        self.trv_schema.tag_configure("odd", background="#ffffff")
-        self.trv_results.tag_configure("even", background="#f0f0f0")
-        self.trv_results.tag_configure("odd", background="#ffffff")
+        self.trv_schema.tag_configure("even", background=fws_sqlite_viewer_const.COLOR_EVEN_ROW)
+        self.trv_schema.tag_configure("odd", background=fws_sqlite_viewer_const.COLOR_ODD_ROW)
+        self.trv_results.tag_configure("even", background=fws_sqlite_viewer_const.COLOR_EVEN_ROW)
+        self.trv_results.tag_configure("odd", background=fws_sqlite_viewer_const.COLOR_ODD_ROW)
     #endregion

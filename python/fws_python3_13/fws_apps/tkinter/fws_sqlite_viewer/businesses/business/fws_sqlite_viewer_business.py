@@ -13,8 +13,8 @@ import csv
 from typing import List, Optional, Dict
 from pathlib import Path
 from fws_apps.tkinter.fws_sqlite_viewer.businesses.entity import fws_sqlite_viewer_entity
-from fws_apps.tkinter.fws_sqlite_viewer.businesses.dto import fws_sqlite_viewer_dto_query_result
-from fws_apps.tkinter.fws_sqlite_viewer.businesses.dto import fws_sqlite_viewer_dto_table_schema
+from fws_apps.tkinter.fws_sqlite_viewer.businesses.entity import fws_sqlite_viewer_entity_query_result
+from fws_apps.tkinter.fws_sqlite_viewer.businesses.entity import fws_sqlite_viewer_entity_table_schema
 
 class FwsSqliteViewerBusiness:
     """
@@ -78,16 +78,18 @@ class FwsSqliteViewerBusiness:
             self.connection = None
         self.fws_sqlite_viewer_entity_obj.current_db_path = None
 
-    def get_tables(self) -> Dict[str, List[str]]:
+    def get_tables(self) -> Dict[str, Dict[str, List[str]]]:
         """
         Summary:
-            接続されているすべてのデータベース内のテーブル一覧を取得します。
+            接続されているすべてのデータベース内のテーブルおよびビュー一覧を取得します。
         Description:
-            PRAGMA database_list でDB一覧を取得し、各DBのsqlite_masterからテーブルを抽出して返します。
+            PRAGMA database_list でDB一覧を取得し、各DBのsqlite_masterから
+            テーブルとビューを抽出して階層化された辞書で返します。
         Args:
             なし
         Returns:
-            Dict[str, List[str]] - データベース名(エイリアス)をキーとするテーブル名のリスト。
+            Dict[str, Dict[str, List[str]]] - データベース名(エイリアス)をキーとする、
+            'Tables' と 'Views' をキーとするオブジェクト名リストの辞書。
         """
         if not self.connection:
             return {}
@@ -98,17 +100,35 @@ class FwsSqliteViewerBusiness:
             cursor.execute("PRAGMA database_list;")
             db_list = cursor.fetchall()
             
-            tables_dict: Dict[str, List[str]] = {}
+            tables_dict: Dict[str, Dict[str, List[str]]] = {}
             for db_seq, db_name, db_file in db_list:
-                # 各データベースのテーブル一覧を取得
+                # 各データベースのテーブル・ビュー一覧を取得
                 # temp などの内部DBや、スキーマがないDBもあるため例外対応
                 try:
-                    cursor.execute(f"SELECT name FROM {db_name}.sqlite_master WHERE type='table' ORDER BY name;")
-                    tables = [row[0] for row in cursor.fetchall()]
-                    tables_dict[db_name] = tables
+                    cursor.execute(f"SELECT name, type FROM {db_name}.sqlite_master WHERE type IN ('table', 'view') ORDER BY name;")
+                    rows = cursor.fetchall()
+                    tables = [row[0] for row in rows if row[1] == 'table']
+                    views = [row[0] for row in rows if row[1] == 'view']
+                    tables_dict[db_name] = {'Tables': tables, 'Views': views}
                 except sqlite3.Error:
                     pass
             return tables_dict
+        finally:
+            cursor.close()
+
+    def get_database_list(self) -> List[tuple]:
+        """
+        Summary:
+            アタッチされているすべてのデータベースのリストを取得します。
+        Returns:
+            List[tuple] - PRAGMA database_list の実行結果のタプルリスト (seq, name, file)。
+        """
+        if not self.connection:
+            return []
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute("PRAGMA database_list;")
+            return cursor.fetchall()
         finally:
             cursor.close()
 
@@ -153,7 +173,7 @@ class FwsSqliteViewerBusiness:
         finally:
             cursor.close()
 
-    def get_table_schema(self, table_name: str, alias: str = "main") -> List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema]:
+    def get_table_schema(self, table_name: str, alias: str = "main") -> List[fws_sqlite_viewer_entity_table_schema.FwsSqliteViewerEntityTableSchema]:
         """
         Summary:
             指定されたテーブルのスキーマ情報を取得します。
@@ -163,7 +183,7 @@ class FwsSqliteViewerBusiness:
             table_name: str - スキーマを取得するテーブル名。
             alias: str - データベースエイリアス名（デフォルト: "main"）。
         Returns:
-            List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema] - スキーマDTOのリスト。
+            List[fws_sqlite_viewer_entity_table_schema.FwsSqliteViewerEntityTableSchema] - スキーマDTOのリスト。
         """
         if not self.connection:
             return []
@@ -172,18 +192,70 @@ class FwsSqliteViewerBusiness:
         try:
             cursor.execute(f"PRAGMA {alias}.table_info('{table_name}');")
             rows = cursor.fetchall()
-            schema_list: List[fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema] = []
+            schema_list: List[fws_sqlite_viewer_entity_table_schema.FwsSqliteViewerEntityTableSchema] = []
             for row in rows:
-                dto = fws_sqlite_viewer_dto_table_schema.FwsSqliteViewerDtoTableSchema(
+                schema_list.append(fws_sqlite_viewer_entity_table_schema.FwsSqliteViewerEntityTableSchema(
                     cid=row[0],
                     name=row[1],
                     type_name=row[2],
                     notnull=row[3],
                     dflt_value=row[4],
                     pk=row[5]
-                )
-                schema_list.append(dto)
+                ))
             return schema_list
+        finally:
+            cursor.close()
+
+    def get_table_ddl(self, table_name: str, alias: str = "main") -> str:
+        """
+        Summary:
+            指定されたテーブルのCREATE TABLE文（DDL）を取得します。
+        Description:
+            sqlite_master テーブルから対象テーブルのDDLを取得します。
+        Args:
+            table_name: str - テーブル名。
+            alias: str - データベースエイリアス名（デフォルト: "main"）。
+        Returns:
+            str - CREATE TABLE文。存在しない場合や取得できない場合は空文字列。
+        """
+        if not self.connection:
+            return ""
+
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        try:
+            cursor.execute(f"SELECT sql FROM {alias}.sqlite_master WHERE type = 'table' AND name = ?;", (table_name,))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+            return ""
+        except Exception:
+            return ""
+        finally:
+            cursor.close()
+
+    def get_related_ddl(self, table_name: str, alias: str = "main") -> List[str]:
+        """
+        Summary:
+            指定されたテーブルに関連するインデックスやトリガーのDDLを取得します。
+        Description:
+            sqlite_master テーブルから、tbl_name が指定テーブルに一致する
+            CREATE INDEX および CREATE TRIGGER 文のリストを取得します。
+        Args:
+            table_name: str - テーブル名。
+            alias: str - データベースエイリアス名（デフォルト: "main"）。
+        Returns:
+            List[str] - 関連するDDL文字列のリスト。
+        """
+        if not self.connection:
+            return []
+
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        try:
+            cursor.execute(f"SELECT sql FROM {alias}.sqlite_master WHERE type IN ('index', 'trigger') AND tbl_name = ? AND sql IS NOT NULL;", (table_name,))
+            rows = cursor.fetchall()
+            return [row[0] for row in rows if row[0]]
+        except Exception:
+            return []
         finally:
             cursor.close()
 
@@ -226,7 +298,56 @@ class FwsSqliteViewerBusiness:
         # 空のクエリを除外して返す
         return [q for q in queries if q]
 
-    def execute_query(self, sql_query: str) -> fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult:
+    def update_record(self, table_name: str, target_col: str, new_value: any, old_row_dict: dict) -> int:
+        """
+        Summary:
+            指定されたテーブルの1レコードを更新します。
+        Description:
+            old_row_dict に含まれるすべての元の値をWHERE句の条件にしてレコードを一意に特定し、更新します。
+        Args:
+            table_name: str - 更新対象のテーブル名。
+            target_col: str - 更新するカラム名。
+            new_value: any - 新しい値。
+            old_row_dict: dict - 更新前レコードのカラム名と値の辞書。
+        Returns:
+            int - 更新された行数。
+        """
+        if not self.connection:
+            raise sqlite3.Error("Not connected to a database.")
+            
+        where_clauses = []
+        parameters = [new_value]
+        
+        for col_name, old_val in old_row_dict.items():
+            if old_val is None:
+                # 識別子として扱われるのを防ぐため、必要に応じてエスケープする
+                where_clauses.append(f'"{col_name}" IS NULL')
+            else:
+                where_clauses.append(f'"{col_name}" = ?')
+                parameters.append(old_val)
+                
+        where_sql = " AND ".join(where_clauses)
+        
+        if "." in table_name:
+            schema_name, t_name = table_name.split(".", 1)
+            formatted_table = f'"{schema_name}"."{t_name}"'
+        else:
+            formatted_table = f'"{table_name}"'
+            
+        update_sql = f'UPDATE {formatted_table} SET "{target_col}" = ? WHERE {where_sql}'
+        
+        cursor: sqlite3.Cursor = self.connection.cursor()
+        try:
+            cursor.execute(update_sql, parameters)
+            self.connection.commit()
+            return cursor.rowcount
+        except sqlite3.Error as e:
+            self.connection.rollback()
+            raise e
+        finally:
+            cursor.close()
+
+    def execute_query(self, sql_query: str) -> fws_sqlite_viewer_entity_query_result.FwsSqliteViewerEntityQueryResult:
         """
         Summary:
             任意のSQLクエリ（複数クエリ対応）を実行します。
@@ -237,9 +358,9 @@ class FwsSqliteViewerBusiness:
         Args:
             sql_query: str - 実行するSQL文。
         Returns:
-            fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult - 実行結果を格納したDTO。
+            fws_sqlite_viewer_entity_query_result.FwsSqliteViewerEntityQueryResult - 実行結果を格納したDTO。
         """
-        result_dto: fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult = fws_sqlite_viewer_dto_query_result.FwsSqliteViewerDtoQueryResult()
+        result_dto: fws_sqlite_viewer_entity_query_result.FwsSqliteViewerEntityQueryResult = fws_sqlite_viewer_entity_query_result.FwsSqliteViewerEntityQueryResult()
         
         if not self.connection:
             result_dto.error_message = "Not connected to a database."
@@ -255,6 +376,7 @@ class FwsSqliteViewerBusiness:
         
         last_columns = []
         last_rows = []
+        last_select_query = ""
         has_select_result = False
 
         try:
@@ -337,6 +459,7 @@ class FwsSqliteViewerBusiness:
                     last_columns = [description[0] for description in cursor.description]
                     last_rows = cursor.fetchall()
                     has_select_result = True
+                    last_select_query = q
                     result_dto.execution_history.append((q, len(last_rows)))
                 else:
                     # INSERT, UPDATE, DELETE などの場合は変更行数を取得
@@ -350,6 +473,7 @@ class FwsSqliteViewerBusiness:
                 result_dto.columns = last_columns
                 result_dto.rows = last_rows
                 result_dto.rowcount = len(last_rows)
+                result_dto.executed_select_sql = last_select_query
             else:
                 # 最後のクエリのrowcount、または更新系の合計値を設定
                 # （ただし詳細履歴は execution_history にあるため、ここでは最後のrowcountを代表としてセット）
