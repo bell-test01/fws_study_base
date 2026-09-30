@@ -10,6 +10,7 @@ Attachment:
     なし
 """
 import tkinter as tk
+from functools import partial
 from tkinter import ttk, messagebox
 from typing import List, Dict, Optional
 
@@ -78,9 +79,11 @@ class FwsCaseRecorderEvent:
         self._fws_case_recorder_view_obj.btn_search.config(command=self.btn_search_click)
         self._fws_case_recorder_view_obj.cmb_search_case.bind("<Return>", self.cmb_search_case_key_press)
         self._fws_case_recorder_view_obj.cmb_search_case.bind("<<ComboboxSelected>>", self.cmb_search_case_select)
+        self._fws_case_recorder_view_obj.cmb_search_case.bind("<FocusOut>", self.cmb_search_case_select)
 
-        # 案件番号選択時の自動補正
+        # 案件番号選択・手入力後の自動補正
         self._fws_case_recorder_view_obj.cmb_case_number.bind("<<ComboboxSelected>>", self.cmb_case_number_select)
+        self._fws_case_recorder_view_obj.cmb_case_number.bind("<FocusOut>", self.cmb_case_number_select)
 
         # 県域・ビル名変更時のサジェスト
         self._fws_case_recorder_view_obj.ent_region.bind("<KeyRelease>", self.ent_region_change)
@@ -97,6 +100,10 @@ class FwsCaseRecorderEvent:
 
         # マウスホイール
         self._fws_case_recorder_view_obj.bind_all("<MouseWheel>", self._on_mousewheel)
+
+        # キャンバスリサイズ時の幅・高さ追従
+        self._fws_case_recorder_view_obj.cvs_blocks.bind("<Configure>", self._on_blocks_configure)
+        self._fws_case_recorder_view_obj.cvs_history.bind("<Configure>", self._on_history_configure)
 
         # ウィンドウ終了
         self._fws_case_recorder_view_obj.protocol("WM_DELETE_WINDOW", self._win_main_close)
@@ -144,6 +151,12 @@ class FwsCaseRecorderEvent:
         try:
             record_id: int = self._fws_case_recorder_logic_obj.save_record(region, building, case_number, record_time, "", is_editing=1)
             self._create_block(record_id, region, building, case_number, record_time, "")
+            
+            if record_id in self._active_blocks:
+                block_widgets = self._active_blocks[record_id]
+                self._fws_case_recorder_view_obj.after(10, lambda w=block_widgets["txt_content"]: w.focus_set())
+                self._fws_case_recorder_view_obj.after(20, lambda: self._fws_case_recorder_view_obj.cvs_blocks.yview_moveto(1.0))
+                
             self._update_status("ブロックを作成し、DBへ保存しました。")
         except Exception as e:
             messagebox.showerror("作成エラー", f"ブロック作成に失敗しました: {e}")
@@ -228,6 +241,7 @@ class FwsCaseRecorderEvent:
         try:
             self._fws_case_recorder_logic_obj.update_record(block_id, region, building, case_number, record_time, content)
             self._update_status(f"案件 {case_number} を一時保存しました。")
+            self._fws_case_recorder_view_obj.after(10, lambda w=block_widgets["txt_content"]: w.focus_set())
         except Exception as e:
             messagebox.showerror("保存エラー", f"保存に失敗しました: {e}")
 
@@ -500,6 +514,8 @@ class FwsCaseRecorderEvent:
         try:
             self._fws_case_recorder_logic_obj.update_record(record_id, region, building, case_number, record_time, content)
             self._update_status(f"レコード ID:{record_id} を更新しました。")
+            if "txt_content" in widgets:
+                self._fws_case_recorder_view_obj.after(10, lambda w=widgets["txt_content"]: w.focus_set())
         except Exception as e:
             messagebox.showerror("更新エラー", f"更新に失敗しました: {e}")
 
@@ -562,15 +578,83 @@ class FwsCaseRecorderEvent:
     def _change_alpha(self, event=None) -> None:
         self._fws_case_recorder_view_obj.attributes("-alpha", self._fws_case_recorder_view_obj.scl_alpha.get())
 
+    def _get_time_format_str(self) -> str:
+        """UIで選択された時刻フォーマット文字列を、strftime用の書式指定子に変換します。"""
+        display_format = self._fws_case_recorder_view_obj.cmb_time_format.get()
+        if display_format == "YYYY/MM/DD":
+            return "%Y/%m/%d"
+        elif display_format == "HH:MM":
+            return "%H:%M"
+        else:
+            return "%Y/%m/%d %H:%M"
+
+    def _insert_current_time(self, txt_content: tk.Text) -> None:
+        """テキストエリアに現在時刻を挿入します"""
+        fmt = self._get_time_format_str()
+        current_time = self._fws_case_recorder_logic_obj.generate_current_time(fmt)
+        self._insert_symbol(txt_content, current_time)
+
     def _on_mousewheel(self, event: tk.Event) -> None:
         widget = self._fws_case_recorder_view_obj.winfo_containing(event.x_root, event.y_root)
         if widget:
             current = widget
             while current:
+                if isinstance(current, tk.Text):
+                    current.yview_scroll(int(-1*(event.delta/120)), "units")
+                    break
                 if isinstance(current, tk.Canvas):
                     current.yview_scroll(int(-1*(event.delta/120)), "units")
                     break
                 current = current.master
+
+    def _on_blocks_configure(self, e: tk.Event) -> None:
+        v = self._fws_case_recorder_view_obj
+        v.cvs_blocks.itemconfig(v.cvs_blocks_window, width=e.width)
+        req_height = v.frm_blocks_container.winfo_reqheight()
+        if e.height > req_height:
+            v.cvs_blocks.itemconfig(v.cvs_blocks_window, height=e.height)
+        else:
+            v.cvs_blocks.itemconfig(v.cvs_blocks_window, height=req_height)
+
+    def _on_history_configure(self, e: tk.Event) -> None:
+        v = self._fws_case_recorder_view_obj
+        v.cvs_history.itemconfig(v.cvs_history_window, width=e.width)
+        req_height = v.frm_history_container.winfo_reqheight()
+        if e.height > req_height:
+            v.cvs_history.itemconfig(v.cvs_history_window, height=e.height)
+        else:
+            v.cvs_history.itemconfig(v.cvs_history_window, height=req_height)
+
+    def _accordion_start_resize(self, event: tk.Event, block) -> None:
+        block.resize_start_y = event.y_root
+        block.resize_start_height = int(block.txt_content.cget("height"))
+
+    def _accordion_do_resize(self, event: tk.Event, block) -> None:
+        delta_lines = (event.y_root - block.resize_start_y) // 15
+        new_height = max(3, block.resize_start_height + delta_lines)
+        if new_height != int(block.txt_content.cget("height")):
+            block.txt_content.configure(height=new_height)
+
+    def _accordion_end_resize(self, event: tk.Event, block) -> None:
+        if block.is_active_mode:
+            self._update_blocks_scrollregion()
+        else:
+            self._update_history_scrollregion()
+
+    def _accordion_toggle(self, block) -> None:
+        if block.is_expanded.get():
+            block.frm_content.pack_forget()
+            block.btn_header.config(text=f"▶ {block.display_header}")
+            block.is_expanded.set(False)
+        else:
+            block.frm_content.pack(fill=tk.X)
+            block.btn_header.config(text=f"▼ {block.display_header}")
+            block.is_expanded.set(True)
+            
+        if block.is_active_mode:
+            self._update_blocks_scrollregion()
+        else:
+            self._update_history_scrollregion()
 
     def _create_block(self, block_id: int, region: str, building: str, case_number: str, record_time: str, content: str) -> None:
         """
@@ -588,185 +672,112 @@ class FwsCaseRecorderEvent:
         Returns:
             None - 戻り値なし。
         """
-
-        # ブロックフレーム全体
-        frm_block: ttk.Frame = ttk.Frame(self._fws_case_recorder_view_obj.frm_blocks_container)
-        """ttk.Frame - ブロック全体フレーム"""
-        frm_block.pack(fill=tk.X, padx=5, pady=5)
-
-        # アコーディオンヘッダー
-        frm_block_header: ttk.Frame = ttk.Frame(frm_block)
-        """ttk.Frame - ヘッダーフレーム"""
-        frm_block_header.pack(fill=tk.X)
+        from fws_apps.tkinter.fws_case_recorder.views.view.components.fws_case_recorder_accordion_block import FwsCaseRecorderAccordionBlock
         
-        frm_block_content: ttk.LabelFrame = ttk.LabelFrame(frm_block, text="")
-        """ttk.LabelFrame - ブロックコンテンツフレーム"""
-        frm_block_content.pack(fill=tk.X)
-
-        is_expanded: tk.BooleanVar = tk.BooleanVar(value=True)
-        """tk.BooleanVar - 展開状態"""
-
-        # コンボボックスは下で生成するため一時的に参照用の変数を保持する（後に設定）
-        cmb_ref: dict = {"cmb": None}
-
-        btn_header: ttk.Button = ttk.Button(
-            frm_block_header,
-            text=f"▼ ブロック #{block_id} [{case_number}]",
-            command=lambda: self._toggle_block_accordion(btn_header, frm_block_content, is_expanded, block_id, cmb_ref),
-            style="Left.TButton"
+        block = FwsCaseRecorderAccordionBlock(
+            self._fws_case_recorder_view_obj.frm_blocks_container,
+            block_id=block_id,
+            region=region,
+            building=building,
+            case_number=case_number,
+            record_time=record_time,
+            content=content,
+            display_header=f"ブロック #{block_id} [{case_number}]",
+            is_active_mode=True
         )
-        """ttk.Button - ヘッダーボタン"""
-        btn_header.pack(fill=tk.X)
-
-        # 1行目: 県域・ビル名
-        frm_block_row1: ttk.Frame = ttk.Frame(frm_block_content)
-        """ttk.Frame - ブロック1行目"""
-        frm_block_row1.pack(fill=tk.X, padx=5, pady=2)
-
-        ttk.Label(frm_block_row1, text="県域:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_block_region: ttk.Entry = ttk.Entry(frm_block_row1, width=8)
-        """ttk.Entry - ブロック内県域"""
-        ent_block_region.pack(side=tk.LEFT, padx=(0, 2))
-        ent_block_region.insert(0, region)
-
-        ttk.Label(frm_block_row1, text="ビル名:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_block_building: ttk.Entry = ttk.Entry(frm_block_row1, width=10)
-        """ttk.Entry - ブロック内ビル名"""
-        ent_block_building.pack(side=tk.LEFT, padx=(0, 2))
-        ent_block_building.insert(0, building)
-
-        # 2行目: 案件番号・時間
-        frm_block_row2: ttk.Frame = ttk.Frame(frm_block_content)
-        """ttk.Frame - ブロック2行目"""
-        frm_block_row2.pack(fill=tk.X, padx=5, pady=2)
-
-        ttk.Label(frm_block_row2, text="案件番号:").pack(side=tk.LEFT, padx=(0, 2))
-        cmb_block_case_number: ttk.Combobox = ttk.Combobox(frm_block_row2, width=15)
-        """ttk.Combobox - ブロック内案件番号"""
-        cmb_block_case_number.pack(side=tk.LEFT, padx=(0, 2))
-        cmb_block_case_number.set(case_number)
-        cmb_ref["cmb"] = cmb_block_case_number
-
-        ttk.Label(frm_block_row2, text="時間:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_block_record_time: ttk.Entry = ttk.Entry(frm_block_row2, width=15)
-        """ttk.Entry - ブロック内記録時刻"""
-        ent_block_record_time.pack(side=tk.LEFT)
-        ent_block_record_time.insert(0, record_time)
-
-        var_time_check: tk.BooleanVar = tk.BooleanVar(value=False)
-        """tk.BooleanVar - 時間更新チェック状態"""
-        chk_time: ttk.Checkbutton = ttk.Checkbutton(
-            frm_block_row2, 
-            text="更新", 
-            variable=var_time_check, 
-            command=lambda: self._on_time_check(var_time_check, ent_block_record_time)
-        )
-        """ttk.Checkbutton - 時間更新チェックボックス"""
-        chk_time.pack(side=tk.LEFT, padx=(2, 8))
-
-        # ブロック内の県域・ビル名変更でサジェスト更新
-        ent_block_region.bind("<KeyRelease>", lambda e, r=ent_block_region, b=ent_block_building, c=cmb_block_case_number: self._update_block_case_suggestions(r, b, c))
-        ent_block_building.bind("<KeyRelease>", lambda e, r=ent_block_region, b=ent_block_building, c=cmb_block_case_number: self._update_block_case_suggestions(r, b, c))
-        # ブロック内の案件番号選択時に自動補正
-        cmb_block_case_number.bind("<<ComboboxSelected>>", lambda e, c=cmb_block_case_number, r=ent_block_region, b=ent_block_building: self._autofill_region_building(c, r, b))
-
-        # 3行目: ツールバー
-        frm_block_toolbar: ttk.Frame = ttk.Frame(frm_block_content)
-        """ttk.Frame - ブロックツールバー"""
-        frm_block_toolbar.pack(fill=tk.X, padx=5, pady=2)
-
-        # テキストエリア（先に変数を宣言し、ツールバーボタンのcommandで参照可能にする）
-        txt_block_content: tk.Text = tk.Text(frm_block_content, height=8, undo=True)
-        """tk.Text - ブロック内記録内容テキストエリア"""
-
-        btn_block_arrow_r: ttk.Button = ttk.Button(frm_block_toolbar, text="→", width=3,
-            command=lambda: self.btn_arrow_r_click(txt_block_content))
-        """ttk.Button - 右矢印ボタン"""
-        btn_block_arrow_r.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_block_arrow_l: ttk.Button = ttk.Button(frm_block_toolbar, text="←", width=3,
-            command=lambda: self.btn_arrow_l_click(txt_block_content))
-        """ttk.Button - 左矢印ボタン"""
-        btn_block_arrow_l.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_block_quote: ttk.Button = ttk.Button(frm_block_toolbar, text="---", width=4,
-            command=lambda: self.btn_quote_click(txt_block_content))
-        """ttk.Button - 引用線ボタン"""
-        btn_block_quote.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_block_tmpl: ttk.Button = ttk.Button(frm_block_toolbar, text="定型文▼", width=7,
-            command=lambda: self.btn_tmpl_click(txt_block_content))
-        """ttk.Button - 定型文ボタン"""
-        btn_block_tmpl.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_block_time: ttk.Button = ttk.Button(frm_block_toolbar, text="時刻挿入", width=8,
-            command=lambda: self._insert_symbol(txt_block_content, self._fws_case_recorder_logic_obj.generate_current_time()))
-        """ttk.Button - 時刻挿入ボタン"""
-        btn_block_time.pack(side=tk.LEFT, padx=(0, 2))
-
-        # テキストエリア配置
-        txt_block_content.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
-        txt_block_content.insert("1.0", content)
-
+        block.pack(fill=tk.X, padx=5, pady=5)
+        
+        # ツールバーボタンのイベントバインド
+        block.btn_arrow_r.config(command=partial(self.btn_arrow_r_click, block.txt_content))
+        block.btn_arrow_l.config(command=partial(self.btn_arrow_l_click, block.txt_content))
+        block.btn_quote.config(command=partial(self.btn_quote_click, block.txt_content))
+        block.btn_tmpl.config(command=partial(self.btn_tmpl_click, block.txt_content))
+        block.btn_time.config(command=lambda: self._insert_current_time(block.txt_content))
+        
+        # 時間更新チェックボックス
+        block.chk_time.config(command=partial(self._on_time_check, block.var_time_check, block.ent_record_time))
+        
         # キーボードショートカットバインド
-        txt_block_content.bind("<Control-Right>", lambda e: self._insert_symbol(txt_block_content, fws_case_recorder_const.SYMBOL_ARROW_RIGHT) or "break")
-        txt_block_content.bind("<Control-Left>", lambda e: self._insert_symbol(txt_block_content, fws_case_recorder_const.SYMBOL_ARROW_LEFT) or "break")
-        txt_block_content.bind("<Control-q>", lambda e: self.btn_quote_click(txt_block_content) or "break")
-        txt_block_content.bind("<Control-t>", lambda e: self.btn_tmpl_click(txt_block_content) or "break")
+        block.txt_content.bind("<Control-Alt-Right>", lambda e: self.btn_arrow_r_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-Left>", lambda e: self.btn_arrow_l_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-q>", lambda e: self.btn_quote_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-t>", lambda e: self.btn_tmpl_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-d>", lambda e: self._insert_current_time(block.txt_content) or "break")
+        
+        # サジェスト等のバインド
+        block.ent_region.bind("<KeyRelease>", lambda e, r=block.ent_region, b=block.ent_building, c=block.cmb_case_number: self._update_block_case_suggestions(r, b, c))
+        block.ent_building.bind("<KeyRelease>", lambda e, r=block.ent_region, b=block.ent_building, c=block.cmb_case_number: self._update_block_case_suggestions(r, b, c))
+        block.cmb_case_number.bind("<<ComboboxSelected>>", lambda e, c=block.cmb_case_number, r=block.ent_region, b=block.ent_building: self._autofill_region_building(c, r, b))
+        block.cmb_case_number.bind("<FocusOut>", lambda e, c=block.cmb_case_number, r=block.ent_region, b=block.ent_building: self._autofill_region_building(c, r, b))
+        
+        # ヘッダーテキストの動的更新用（案件番号変更時）
+        block.cmb_case_number.bind("<KeyRelease>", partial(self._update_header_from_case, block, block_id), add="+")
+        block.cmb_case_number.bind("<<ComboboxSelected>>", partial(self._update_header_from_case, block, block_id), add="+")
+
+        # アコーディオン開閉バインド
+        block.btn_header.config(command=lambda: self._accordion_toggle(block))
+        
+        # アコーディオンのリサイズバインド
+        block.frm_resize_grip.bind("<ButtonPress-1>", lambda e: self._accordion_start_resize(e, block))
+        block.frm_resize_grip.bind("<B1-Motion>", lambda e: self._accordion_do_resize(e, block))
+        block.frm_resize_grip.bind("<ButtonRelease-1>", lambda e: self._accordion_end_resize(e, block))
 
         # 保存・削除ボタン
-        frm_block_buttons: ttk.Frame = ttk.Frame(frm_block_content)
-        """ttk.Frame - ブロックボタン行"""
-        frm_block_buttons.pack(fill=tk.X, padx=5, pady=(2, 5))
-
-        btn_block_delete: ttk.Button = ttk.Button(frm_block_buttons, text="削除",
-            command=lambda bid=block_id: self.btn_delete_click(bid))
-        """ttk.Button - 削除ボタン"""
+        btn_block_delete: ttk.Button = ttk.Button(block.frm_buttons, text="削除", command=partial(self.btn_delete_click, block_id))
         btn_block_delete.pack(side=tk.LEFT)
 
-        btn_block_save: ttk.Button = ttk.Button(frm_block_buttons, text="DB保存(閉じる)",
-            command=lambda bid=block_id: self.btn_save_click(bid))
-        """ttk.Button - DB保存ボタン"""
+        btn_block_save: ttk.Button = ttk.Button(block.frm_buttons, text="DB保存(閉じる)", command=partial(self.btn_save_click, block_id))
         btn_block_save.pack(side=tk.RIGHT, padx=(5, 0))
 
-        btn_block_temp_save: ttk.Button = ttk.Button(frm_block_buttons, text="一時保存",
-            command=lambda bid=block_id: self.btn_temp_save_click(bid))
-        """ttk.Button - 一時保存ボタン"""
+        btn_block_temp_save: ttk.Button = ttk.Button(block.frm_buttons, text="一時保存", command=partial(self.btn_temp_save_click, block_id))
         btn_block_temp_save.pack(side=tk.RIGHT)
 
         # ブロック管理辞書に登録
         self._active_blocks[block_id] = {
-            "frm_block": frm_block,
-            "ent_region": ent_block_region,
-            "ent_building": ent_block_building,
-            "cmb_case_number": cmb_block_case_number,
-            "ent_record_time": ent_block_record_time,
-            "txt_content": txt_block_content
+            "frm_block": block,
+            "ent_region": block.ent_region,
+            "ent_building": block.ent_building,
+            "cmb_case_number": block.cmb_case_number,
+            "ent_record_time": block.ent_record_time,
+            "txt_content": block.txt_content
         }
 
         # キャンバスのスクロール領域を更新
-        self._fws_case_recorder_view_obj.frm_blocks_container.update_idletasks()
-        self._fws_case_recorder_view_obj.cvs_blocks.configure(
-            scrollregion=self._fws_case_recorder_view_obj.cvs_blocks.bbox("all")
-        )
-
-    def _toggle_block_accordion(self, btn_header: ttk.Button, frm_content: ttk.Frame, is_expanded: tk.BooleanVar, block_id: int, cmb_ref: dict) -> None:
-        case_number = cmb_ref["cmb"].get().strip() if cmb_ref["cmb"] else ""
-        if is_expanded.get():
-            frm_content.pack_forget()
-            btn_header.config(text=f"▶ ブロック #{block_id} [{case_number}]")
-            is_expanded.set(False)
-        else:
-            frm_content.pack(fill=tk.X)
-            btn_header.config(text=f"▼ ブロック #{block_id} [{case_number}]")
-            is_expanded.set(True)
-        self._fws_case_recorder_view_obj.frm_blocks_container.update_idletasks()
-        self._fws_case_recorder_view_obj.cvs_blocks.configure(scrollregion=self._fws_case_recorder_view_obj.cvs_blocks.bbox("all"))
+        self._update_blocks_scrollregion(None)
 
     def _on_time_check(self, var_time_check: tk.BooleanVar, ent_time: ttk.Entry) -> None:
         if var_time_check.get():
             ent_time.delete(0, tk.END)
             ent_time.insert(0, self._fws_case_recorder_logic_obj.generate_current_time())
+
+    def _update_blocks_scrollregion(self, event: tk.Event = None) -> None:
+        """ブロックコンテナのスクロール領域を更新します"""
+        view = self._fws_case_recorder_view_obj
+        view.frm_blocks_container.update_idletasks()
+        
+        req_height = view.frm_blocks_container.winfo_reqheight()
+        canvas_height = view.cvs_blocks.winfo_height()
+        new_height = max(canvas_height, req_height)
+        view.cvs_blocks.itemconfig(view.cvs_blocks_window, height=new_height)
+        
+        view.cvs_blocks.configure(scrollregion=view.cvs_blocks.bbox("all"))
+
+    def _update_history_scrollregion(self, event: tk.Event = None) -> None:
+        """履歴コンテナのスクロール領域を更新します"""
+        view = self._fws_case_recorder_view_obj
+        view.frm_history_container.update_idletasks()
+        
+        req_height = view.frm_history_container.winfo_reqheight()
+        canvas_height = view.cvs_history.winfo_height()
+        new_height = max(canvas_height, req_height)
+        view.cvs_history.itemconfig(view.cvs_history_window, height=new_height)
+        
+        view.cvs_history.configure(scrollregion=view.cvs_history.bbox("all"))
+
+    def _update_header_from_case(self, block, block_id: int, event: tk.Event = None) -> None:
+        """ヘッダーテキストの動的更新（案件番号変更時）"""
+        new_case = block.cmb_case_number.get().strip()
+        block.update_header_text(f"ブロック #{block_id} [{new_case}]")
 
     def _display_search_results(self, result_list: List[fws_case_recorder_model_record.FwsCaseRecorderModelRecord]) -> None:
         """
@@ -809,138 +820,72 @@ class FwsCaseRecorderEvent:
         Returns:
             None - 戻り値なし。
         """
-        frm_accordion: ttk.Frame = ttk.Frame(self._fws_case_recorder_view_obj.frm_history_container)
-        """ttk.Frame - アコーディオンフレーム"""
-        frm_accordion.pack(fill=tk.X, padx=5, pady=2)
-
-        # コンテンツフレーム（折りたたみ対象）
-        frm_content: ttk.Frame = ttk.Frame(frm_accordion)
-        """ttk.Frame - コンテンツフレーム"""
-
-        is_expanded: tk.BooleanVar = tk.BooleanVar(value=False)
-        """tk.BooleanVar - 展開状態"""
-
-        # ヘッダーボタン
-        btn_header: ttk.Button = ttk.Button(
-            frm_accordion,
-            text=f"▶ {model_obj.display_header}",
-            command=lambda: self._toggle_accordion(btn_header, frm_content, is_expanded, model_obj.display_header),
-            style="Left.TButton"
+        from fws_apps.tkinter.fws_case_recorder.views.view.components.fws_case_recorder_accordion_block import FwsCaseRecorderAccordionBlock
+        
+        block = FwsCaseRecorderAccordionBlock(
+            self._fws_case_recorder_view_obj.frm_history_container,
+            block_id=model_obj.record_id,
+            region=model_obj.region,
+            building=model_obj.building,
+            case_number=model_obj.case_number,
+            record_time=model_obj.record_time,
+            content=model_obj.content,
+            display_header=model_obj.display_header,
+            is_active_mode=False
         )
-        """ttk.Button - アコーディオンヘッダーボタン"""
-        btn_header.pack(fill=tk.X)
-
-        # 1行目: 県域・ビル名
-        frm_hist_row1: ttk.Frame = ttk.Frame(frm_content)
-        frm_hist_row1.pack(fill=tk.X, padx=5, pady=2)
+        block.pack(fill=tk.X, padx=5, pady=2)
         
-        ttk.Label(frm_hist_row1, text="県域:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_region: ttk.Entry = ttk.Entry(frm_hist_row1, width=8)
-        ent_hist_region.pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_region.insert(0, model_obj.region)
+        # ツールバーボタンのイベントバインド
+        block.btn_arrow_r.config(command=partial(self.btn_arrow_r_click, block.txt_content))
+        block.btn_arrow_l.config(command=partial(self.btn_arrow_l_click, block.txt_content))
+        block.btn_quote.config(command=partial(self.btn_quote_click, block.txt_content))
+        block.btn_tmpl.config(command=partial(self.btn_tmpl_click, block.txt_content))
+        block.btn_time.config(command=lambda: self._insert_current_time(block.txt_content))
+
+        # キーボードショートカットバインド
+        block.txt_content.bind("<Control-Alt-Right>", lambda e: self.btn_arrow_r_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-Left>", lambda e: self.btn_arrow_l_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-q>", lambda e: self.btn_quote_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-t>", lambda e: self.btn_tmpl_click(block.txt_content) or "break")
+        block.txt_content.bind("<Control-Alt-d>", lambda e: self._insert_current_time(block.txt_content) or "break")
+
+        # サジェスト等のバインド
+        block.ent_region.bind("<KeyRelease>", lambda e, r=block.ent_region, b=block.ent_building, c=block.cmb_case_number: self._update_block_case_suggestions(r, b, c))
+        block.ent_building.bind("<KeyRelease>", lambda e, r=block.ent_region, b=block.ent_building, c=block.cmb_case_number: self._update_block_case_suggestions(r, b, c))
+        block.cmb_case_number.bind("<<ComboboxSelected>>", lambda e, c=block.cmb_case_number, r=block.ent_region, b=block.ent_building: self._autofill_region_building(c, r, b))
+        block.cmb_case_number.bind("<FocusOut>", lambda e, c=block.cmb_case_number, r=block.ent_region, b=block.ent_building: self._autofill_region_building(c, r, b))
+
+        # ヘッダーテキストの動的更新用（案件番号変更時）
+        block.cmb_case_number.bind("<KeyRelease>", partial(self._update_header_from_case, block, model_obj.record_id), add="+")
+        block.cmb_case_number.bind("<<ComboboxSelected>>", partial(self._update_header_from_case, block, model_obj.record_id), add="+")
+
+        # アコーディオン開閉バインド
+        block.btn_header.config(command=lambda: self._accordion_toggle(block))
         
-        ttk.Label(frm_hist_row1, text="ビル名:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_building: ttk.Entry = ttk.Entry(frm_hist_row1, width=10)
-        ent_hist_building.pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_building.insert(0, model_obj.building)
-
-        # 2行目: 案件番号・時間
-        frm_hist_row2: ttk.Frame = ttk.Frame(frm_content)
-        frm_hist_row2.pack(fill=tk.X, padx=5, pady=2)
-
-        ttk.Label(frm_hist_row2, text="案件番号:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_case: ttk.Entry = ttk.Entry(frm_hist_row2, width=15)
-        ent_hist_case.pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_case.insert(0, model_obj.case_number)
+        # アコーディオンのリサイズバインド
+        block.frm_resize_grip.bind("<ButtonPress-1>", lambda e: self._accordion_start_resize(e, block))
+        block.frm_resize_grip.bind("<B1-Motion>", lambda e: self._accordion_do_resize(e, block))
+        block.frm_resize_grip.bind("<ButtonRelease-1>", lambda e: self._accordion_end_resize(e, block))
         
-        ttk.Label(frm_hist_row2, text="時間:").pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_time: ttk.Entry = ttk.Entry(frm_hist_row2, width=15)
-        ent_hist_time.pack(side=tk.LEFT, padx=(0, 2))
-        ent_hist_time.insert(0, model_obj.record_time)
-
-        # 3行目: ツールバー
-        frm_hist_toolbar: ttk.Frame = ttk.Frame(frm_content)
-        frm_hist_toolbar.pack(fill=tk.X, padx=5, pady=2)
-
-        # テキストエリア（先に宣言）
-        txt_history_content: tk.Text = tk.Text(frm_content, height=6, undo=True)
-
-        btn_hist_arrow_r: ttk.Button = ttk.Button(frm_hist_toolbar, text="→", width=3,
-            command=lambda: self.btn_arrow_r_click(txt_history_content))
-        btn_hist_arrow_r.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_hist_arrow_l: ttk.Button = ttk.Button(frm_hist_toolbar, text="←", width=3,
-            command=lambda: self.btn_arrow_l_click(txt_history_content))
-        btn_hist_arrow_l.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_hist_quote: ttk.Button = ttk.Button(frm_hist_toolbar, text="---", width=4,
-            command=lambda: self.btn_quote_click(txt_history_content))
-        btn_hist_quote.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_hist_tmpl: ttk.Button = ttk.Button(frm_hist_toolbar, text="定型文▼", width=7,
-            command=lambda: self.btn_tmpl_click(txt_history_content))
-        btn_hist_tmpl.pack(side=tk.LEFT, padx=(0, 2))
-
-        btn_hist_time: ttk.Button = ttk.Button(frm_hist_toolbar, text="時刻挿入", width=8,
-            command=lambda: self._insert_symbol(txt_history_content, self._fws_case_recorder_logic_obj.generate_current_time()))
-        btn_hist_time.pack(side=tk.LEFT, padx=(0, 2))
-
-        # コンテンツ
-        """tk.Text - 履歴編集テキストエリア"""
-        txt_history_content.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
-        txt_history_content.insert("1.0", model_obj.content)
-
         accordion_widgets: Dict = {
-            "txt_content": txt_history_content,
-            "region": ent_hist_region,
-            "building": ent_hist_building,
-            "case_number": ent_hist_case,
-            "record_time": ent_hist_time
+            "txt_content": block.txt_content,
+            "region": block.ent_region,
+            "building": block.ent_building,
+            "case_number": block.cmb_case_number,
+            "record_time": block.ent_record_time
         }
-        """Dict - アコーディオンウィジェット辞書"""
-
+        
         btn_history_delete: ttk.Button = ttk.Button(
-            frm_content, text="削除",
-            command=lambda rid=model_obj.record_id: self.btn_history_delete_click(rid)
+            block.frm_buttons, text="削除",
+            command=partial(self.btn_history_delete_click, model_obj.record_id)
         )
-        """ttk.Button - 履歴削除ボタン"""
         btn_history_delete.pack(side=tk.LEFT, padx=5, pady=(0, 5))
 
         btn_history_save: ttk.Button = ttk.Button(
-            frm_content, text="保存",
-            command=lambda rid=model_obj.record_id, w=accordion_widgets: self.btn_history_save_click(rid, w)
+            block.frm_buttons, text="保存",
+            command=partial(self.btn_history_save_click, model_obj.record_id, accordion_widgets)
         )
-        """ttk.Button - 履歴保存ボタン"""
         btn_history_save.pack(side=tk.RIGHT, padx=5, pady=(0, 5))
-
-    def _toggle_accordion(self, btn_header: ttk.Button, frm_content: ttk.Frame, is_expanded: tk.BooleanVar, display_header: str) -> None:
-        """
-        Summary:
-            アコーディオンの展開/折りたたみを切り替えます。
-        Description:
-            展開状態を反転し、コンテンツフレームの表示/非表示を制御します。
-        Args:
-            btn_header: ttk.Button - ヘッダーボタン。
-            frm_content: ttk.Frame - コンテンツフレーム。
-            is_expanded: tk.BooleanVar - 展開状態。
-            display_header: str - ヘッダー表示テキスト。
-        Returns:
-            None - 戻り値なし。
-        """
-        if is_expanded.get():
-            frm_content.pack_forget()
-            btn_header.config(text=f"▶ {display_header}")
-            is_expanded.set(False)
-        else:
-            frm_content.pack(fill=tk.X)
-            btn_header.config(text=f"▼ {display_header}")
-            is_expanded.set(True)
-
-        # スクロール領域を更新
-        self._fws_case_recorder_view_obj.frm_history_container.update_idletasks()
-        self._fws_case_recorder_view_obj.cvs_history.configure(
-            scrollregion=self._fws_case_recorder_view_obj.cvs_history.bbox("all")
-        )
 
     def _insert_symbol(self, txt_widget: tk.Text, symbol: str) -> None:
         """
@@ -1077,7 +1022,7 @@ class FwsCaseRecorderEvent:
         
         try:
             records: List[fws_case_recorder_model_record.FwsCaseRecorderModelRecord] = self._fws_case_recorder_logic_obj.search_records(case_number=case_number)
-            if records:
+            if len(records) == 1:
                 record = records[0]
                 ent_region.delete(0, tk.END)
                 ent_region.insert(0, record.region)

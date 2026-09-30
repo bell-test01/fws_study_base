@@ -32,7 +32,10 @@ class FwsCaseRecorderTemplateView(tk.Toplevel):
         super().__init__(master)
 
         self.title("定型文管理")
-        self.geometry("600x500")
+        master.update_idletasks()
+        x = master.winfo_x() + (master.winfo_width() - 600) // 2
+        y = master.winfo_y() + (master.winfo_height() - 500) // 2
+        self.geometry(f"600x500+{x}+{y}")
         self.minsize(500, 400)
         self.transient(master)
 

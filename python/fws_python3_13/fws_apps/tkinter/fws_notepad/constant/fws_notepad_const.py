@@ -11,6 +11,9 @@ from pathlib import Path
 APP_DIR: Path = Path(__file__).resolve().parent.parent
 """Path - アプリケーションのルートディレクトリパス"""
 
+APP_VERSION: str = "1.0.0.0"
+"""str - アプリケーションのバージョン情報"""
+
 DATA_DIR: Path = APP_DIR / 'data'
 """Path - データ保存用ディレクトリパス"""
 

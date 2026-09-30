@@ -130,6 +130,13 @@ class FwsCaseRecorderView(tk.Tk):
         """ttk.Scale - 透過度スライダー"""
         self.scl_alpha.pack(side=tk.LEFT, padx=5)
 
+        ttk.Label(self.frm_settings, text="時刻形式:").pack(side=tk.LEFT, padx=(10, 2))
+        self.cmb_time_format: ttk.Combobox = ttk.Combobox(self.frm_settings, width=15, state="readonly")
+        """ttk.Combobox - 時刻挿入フォーマット選択"""
+        self.cmb_time_format["values"] = ("YYYY/MM/DD HH:MM", "YYYY/MM/DD", "HH:MM")
+        self.cmb_time_format.current(0)
+        self.cmb_time_format.pack(side=tk.LEFT, padx=(0, 5))
+
         # 上部: 検索・ブロック作成エリア
         self.frm_left_top: ttk.LabelFrame = ttk.LabelFrame(self.frm_left_pane, text="案件検索・ブロック作成")
         """ttk.LabelFrame - 左ペイン上部フレーム"""
@@ -158,7 +165,7 @@ class FwsCaseRecorderView(tk.Tk):
         ttk.Label(frm_case_row, text="案件番号:").pack(side=tk.LEFT, padx=(0, 2))
         self.cmb_case_number: ttk.Combobox = ttk.Combobox(frm_case_row, width=15)
         """ttk.Combobox - 案件番号コンボボックス"""
-        self.cmb_case_number.pack(side=tk.LEFT, padx=(0, 2))
+        self.cmb_case_number.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
         self.btn_create_block: ttk.Button = ttk.Button(frm_case_row, text="作成", width=6)
         """ttk.Button - ブロック作成ボタン"""
@@ -178,7 +185,7 @@ class FwsCaseRecorderView(tk.Tk):
 
         self.frm_blocks_container.bind("<Configure>", lambda e: self.cvs_blocks.configure(scrollregion=self.cvs_blocks.bbox("all")))
         self.cvs_blocks_window = self.cvs_blocks.create_window((0, 0), window=self.frm_blocks_container, anchor="nw")
-        self.cvs_blocks.bind("<Configure>", lambda e: self.cvs_blocks.itemconfig(self.cvs_blocks_window, width=e.width))
+        
         self.cvs_blocks.configure(yscrollcommand=self.frm_blocks_scrollbar.set)
 
         self.frm_blocks_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -223,9 +230,9 @@ class FwsCaseRecorderView(tk.Tk):
         frm_search_history_row2.pack(fill=tk.X, padx=5, pady=2)
 
         ttk.Label(frm_search_history_row2, text="案件番号:").pack(side=tk.LEFT, padx=(0, 2))
-        self.cmb_search_case: ttk.Combobox = ttk.Combobox(frm_search_history_row2, width=12)
+        self.cmb_search_case: ttk.Combobox = ttk.Combobox(frm_search_history_row2, width=20)
         """ttk.Combobox - 履歴検索用案件番号コンボボックス"""
-        self.cmb_search_case.pack(side=tk.LEFT, padx=(0, 2))
+        self.cmb_search_case.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
         self.btn_search: ttk.Button = ttk.Button(frm_search_history_row2, text="更新", width=6)
         """ttk.Button - 検索(更新)ボタン"""
@@ -245,7 +252,7 @@ class FwsCaseRecorderView(tk.Tk):
 
         self.frm_history_container.bind("<Configure>", lambda e: self.cvs_history.configure(scrollregion=self.cvs_history.bbox("all")))
         self.cvs_history_window = self.cvs_history.create_window((0, 0), window=self.frm_history_container, anchor="nw")
-        self.cvs_history.bind("<Configure>", lambda e: self.cvs_history.itemconfig(self.cvs_history_window, width=e.width))
+        
         self.cvs_history.configure(yscrollcommand=self.frm_history_scrollbar.set)
 
         self.frm_history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)

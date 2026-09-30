@@ -17,7 +17,7 @@ PROJECT_ROOT: Path = APP_DIR.parent.parent.parent
 """Path - プロジェクトルートディレクトリ"""
 
 # アプリケーションのバージョン情報
-APP_VERSION: str = "1.3.0.0"
+APP_VERSION: str = "1.4.1.0"
 """str - アプリケーションのバージョン情報"""
 
 # データベース関連

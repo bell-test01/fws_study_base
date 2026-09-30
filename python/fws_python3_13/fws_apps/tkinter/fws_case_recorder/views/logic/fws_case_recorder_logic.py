@@ -199,18 +199,18 @@ class FwsCaseRecorderLogic:
             model_list.append(self._convert_template_entity_to_model(entity_obj))
         return model_list
 
-    def generate_current_time(self) -> str:
+    def generate_current_time(self, format_str: str = "%Y/%m/%d %H:%M") -> str:
         """
         Summary:
-            現在時刻を記録用フォーマットで取得します。
+            現在時刻を指定フォーマットで取得します。
         Description:
-            yyyy/MM/dd HH:mm 形式の現在時刻文字列を返却します。
+            引数で指定された形式の現在時刻文字列を返却します。
         Args:
-            なし
+            format_str: str - 時刻フォーマット（デフォルト "%Y/%m/%d %H:%M"）
         Returns:
             str - フォーマット済み現在時刻文字列。
         """
-        current_time: str = datetime.now().strftime("%Y/%m/%d %H:%M")
+        current_time: str = datetime.now().strftime(format_str)
         """str - 現在時刻文字列"""
         return current_time
 
