@@ -6,15 +6,13 @@ constant/fws_sqlite_viewer_const.py
 data/.gitkeep
 data/sample - 繧ｳ繝斐・.db
 data/sample.db
-data/session.json
 data/test_data_header.csv
 data/test_data_header.tsv
 data/test_data_no_header.csv
-docs_fws_sqlite_viewer/development/issues_and_unimplemented.md
-docs_fws_sqlite_viewer/development/resolved_issues.md
-docs_fws_sqlite_viewer/development/session_handover.md
-docs_fws_sqlite_viewer/development/version_history.md
-docs_fws_sqlite_viewer/final_specification.md
+docs_fws_sqlite_viewer/.tmp.driveupload/734
+docs_fws_sqlite_viewer/01_architecture_and_spec.md
+docs_fws_sqlite_viewer/02_active_tasks_and_handover.md
+docs_fws_sqlite_viewer/03_resolved_archive.md
 fws_sqlite_viewer.pyw
 git_structure.txt
 output/.gitkeep

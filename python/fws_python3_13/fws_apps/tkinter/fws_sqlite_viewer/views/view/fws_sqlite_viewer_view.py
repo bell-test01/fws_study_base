@@ -33,7 +33,6 @@ class FwsSqliteViewerView(tk.Tk):
         super().__init__()
         
         self.title(fws_sqlite_viewer_const.WINDOW_TITLE)
-        self.geometry(f"{fws_sqlite_viewer_const.WINDOW_MIN_WIDTH}x{fws_sqlite_viewer_const.WINDOW_MIN_HEIGHT}")
         self.minsize(fws_sqlite_viewer_const.WINDOW_MIN_WIDTH, fws_sqlite_viewer_const.WINDOW_MIN_HEIGHT)
         
         self._create_widgets()
@@ -51,6 +50,12 @@ class FwsSqliteViewerView(tk.Tk):
         Returns:
             None - 戻り値なし。
         """
+        # フォント設定
+        default_font = ("Meiryo UI", 7)
+        self.option_add("*Font", default_font)
+        style = ttk.Style()
+        style.configure('.', font=default_font)
+        
         # メインコンテナ
         self.frm_main: ttk.Frame = ttk.Frame(self)
         self.frm_main.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -70,6 +75,13 @@ class FwsSqliteViewerView(tk.Tk):
         
         self.btn_new_db: ttk.Button = ttk.Button(self.frm_top, text="New DB")
         self.btn_new_db.pack(side=tk.LEFT, padx=(5, 0))
+        
+        self.scl_alpha: ttk.Scale = ttk.Scale(self.frm_top, from_=0.2, to=1.0, value=1.0, orient=tk.HORIZONTAL, length=100)
+        self.scl_alpha.pack(side=tk.RIGHT, padx=(5, 5))
+        
+        self.var_topmost: tk.BooleanVar = tk.BooleanVar(value=False)
+        self.chk_topmost: ttk.Checkbutton = ttk.Checkbutton(self.frm_top, text="最前面固定", variable=self.var_topmost)
+        self.chk_topmost.pack(side=tk.RIGHT, padx=(5, 0))
         
         # 中央: 左右分割 PanedWindow
         self.pw_main: ttk.PanedWindow = ttk.PanedWindow(self.frm_main, orient=tk.HORIZONTAL)
@@ -95,6 +107,7 @@ class FwsSqliteViewerView(tk.Tk):
         self.menu_tables.add_command(label="Detach Database", command=lambda: None) # Event層で上書き
         self.menu_tables.add_command(label="Create New Table", command=lambda: None) # Event層で上書き
         self.menu_tables.add_separator()
+        self.menu_tables.add_command(label="Select Top 500 Rows", command=lambda: None) # Event層で上書き
         self.menu_tables.add_command(label="Generate Recreate Script", command=lambda: None) # Event層で上書き
         self.menu_tables.add_command(label="Bulk Insert (Import)", command=lambda: None) # Event層で上書き
         

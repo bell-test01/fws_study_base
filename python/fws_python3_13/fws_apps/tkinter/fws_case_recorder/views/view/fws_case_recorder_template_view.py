@@ -18,7 +18,7 @@ class FwsCaseRecorderTemplateView(tk.Toplevel):
     """
 
     #region Constructor
-    def __init__(self, master: tk.Tk) -> None:
+    def __init__(self, master: tk.Tk, width: int = 600, height: int = 500) -> None:
         """
         Summary:
             コンストラクタ。
@@ -26,6 +26,8 @@ class FwsCaseRecorderTemplateView(tk.Toplevel):
             親ウィンドウを指定してダイアログを初期化し、UI部品を配置します。
         Args:
             master: tk.Tk - 親ウィンドウ。
+            width: int - ウィンドウの幅（デフォルト600）。
+            height: int - ウィンドウの高さ（デフォルト500）。
         Returns:
             None - 戻り値なし。
         """
@@ -33,9 +35,9 @@ class FwsCaseRecorderTemplateView(tk.Toplevel):
 
         self.title("定型文管理")
         master.update_idletasks()
-        x = master.winfo_x() + (master.winfo_width() - 600) // 2
-        y = master.winfo_y() + (master.winfo_height() - 500) // 2
-        self.geometry(f"600x500+{x}+{y}")
+        x = master.winfo_x() + (master.winfo_width() - width) // 2
+        y = master.winfo_y() + (master.winfo_height() - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
         self.minsize(500, 400)
         self.transient(master)
 

@@ -62,8 +62,11 @@ class FwsSqliteViewerEvent:
         self._last_query_sql: str = ""
         self._last_query_result: Optional[fws_sqlite_viewer_model_query_result.FwsSqliteViewerModelQueryResult] = None
 
+        self._geometry_data: Dict[str, str] = {}
+
         self._bind_events()
         self._restore_session()
+        self._apply_geometry(self._fws_sqlite_viewer_view_obj, "main", fws_sqlite_viewer_const.WINDOW_MIN_WIDTH, fws_sqlite_viewer_const.WINDOW_MIN_HEIGHT)
         self._set_status(fws_sqlite_viewer_const.STATUS_MSG_READY)
     #endregion
 
@@ -87,6 +90,7 @@ class FwsSqliteViewerEvent:
             with open(self._session_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 
+            self._geometry_data = data.get("geometry", {})
             main_db = data.get("main_db")
             if main_db and Path(main_db).exists():
                 self._load_db(main_db, is_main=True)
@@ -120,6 +124,9 @@ class FwsSqliteViewerEvent:
         """
         self._fws_sqlite_viewer_view_obj.btn_open_db.config(command=self.btn_open_db_click)
         self._fws_sqlite_viewer_view_obj.btn_new_db.config(command=self.btn_new_db_click)
+
+        self._fws_sqlite_viewer_view_obj.chk_topmost.config(command=self._toggle_topmost)
+        self._fws_sqlite_viewer_view_obj.scl_alpha.config(command=self._change_alpha)
 
         self._fws_sqlite_viewer_view_obj.btn_run_query.config(command=self.btn_run_query_click)
         for key_bind in ("<Alt-x>", "<Alt-X>"):
@@ -257,6 +264,17 @@ class FwsSqliteViewerEvent:
             None - 戻り値なし。
         """
         sql = self._get_sql_query()
+        self._execute_sql(sql)
+
+    def _execute_sql(self, sql: str) -> None:
+        """
+        Summary:
+            指定されたSQLを実行し、結果をビューに反映します。
+        Args:
+            sql: str - 実行するSQL文字列
+        Returns:
+            None - 戻り値なし。
+        """
         if not sql:
             self._set_status("Error: Query is empty.", is_error=True)
             return
@@ -406,7 +424,9 @@ class FwsSqliteViewerEvent:
         if not last_sql:
             last_sql = getattr(self, "_last_query_sql", "").strip()
             
-        match = re.match(r"^\s*SELECT\s+.*?\s+FROM\s+([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)?)(?:\s+WHERE|\s+ORDER|\s+LIMIT|\s*$)?", last_sql, re.IGNORECASE | re.DOTALL)
+        # ダブルクォート、バッククォート、角括弧で囲まれた識別子、または通常の英数字アンダースコアを許容
+        pattern = r"^\s*SELECT\s+.*?\s+FROM\s+((?:\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[a-zA-Z0-9_]+)(?:\.(?:\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[a-zA-Z0-9_]+))?)(?:\s+WHERE|\s+ORDER|\s+LIMIT|\s+GROUP|\s*$|\;)"
+        match = re.match(pattern, last_sql, re.IGNORECASE | re.DOTALL)
         if not match:
             self._set_status("テーブル名が特定できないため直接編集できません", is_error=True, timeout_ms=3000)
             return
@@ -442,42 +462,79 @@ class FwsSqliteViewerEvent:
         Returns:
             None - 戻り値なし。
         """
-        # entryウィジェットの配置
+        # entryウィジェットの代わりにTextウィジェットの配置（複数行対応）
         x, y, w, h = trv.bbox(item_id, column_id)
         
-        entry = tk.Entry(trv)
-        entry.place(x=x, y=y, width=w, height=h)
+        popup_w = max(w, 250)
+        popup_h = max(h * 4, 80)
+        
+        edit_frame = tk.Frame(trv, borderwidth=1, relief="solid")
+        edit_frame.place(x=x, y=y, width=popup_w, height=popup_h)
+        
+        text_widget = tk.Text(edit_frame, wrap=tk.NONE, font=("Consolas", 10))
+        
+        v_scrollbar = ttk.Scrollbar(edit_frame, orient=tk.VERTICAL, command=text_widget.yview)
+        h_scrollbar = ttk.Scrollbar(edit_frame, orient=tk.HORIZONTAL, command=text_widget.xview)
+        text_widget.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 初期値をセット
         current_val = trv.set(item_id, column_id)
-        entry.insert(0, current_val)
-        entry.select_range(0, tk.END)
-        entry.focus()
+        text_widget.insert("1.0", current_val)
+        text_widget.focus()
         
-        def commit_edit(e: tk.Event) -> None:
-            new_val = entry.get()
-            entry.destroy()
+        def commit_edit(e: tk.Event) -> str:
+            # Shift+Enter の場合は改行を挿入（デフォルトの動作を許容）
+            if e.state & 0x0001:  # Shiftキーが押されている
+                return ""
+                
+            new_val = text_widget.get("1.0", "end-1c")
+            edit_frame.destroy()
             if new_val == current_val:
-                return
+                return "break"
                 
             old_row_dict = {col: val for col, val in zip(columns, original_tuple)}
             try:
                 updated_count = self._fws_sqlite_viewer_logic_obj.update_record(table_name, target_col_name, new_val, old_row_dict)
                 if updated_count > 0:
                     self._set_status(f"Updated {updated_count} row(s) successfully.", is_error=False, timeout_ms=3000)
+                    
+                    # 再読み込み前に現在の選択インデックスとフォーカスを取得
+                    selected_indices = [trv.index(item) for item in trv.selection()]
+                    focus_index = trv.index(item_id) if item_id else None
+                    
                     # 再読み込み
-                    self.btn_run_query_click()
+                    if hasattr(self, '_last_query_sql') and self._last_query_sql:
+                        self._execute_sql(self._last_query_sql)
+                    else:
+                        self.btn_run_query_click()
+                    
+                    # 再読み込み後に選択状態とフォーカスを復元
+                    children = trv.get_children()
+                    if children:
+                        for idx in selected_indices:
+                            if 0 <= idx < len(children):
+                                trv.selection_add(children[idx])
+                        if focus_index is not None and 0 <= focus_index < len(children):
+                            focus_item = children[focus_index]
+                            trv.focus(focus_item)
+                            trv.see(focus_item)
                 else:
                     self._set_status("No rows updated.", is_error=True, timeout_ms=3000)
             except Exception as ex:
                 self._set_status(f"Error updating record: {ex}", is_error=True, timeout_ms=5000)
                 
-        def cancel_edit(e: tk.Event) -> None:
-            entry.destroy()
+            return "break"
             
-        entry.bind("<Return>", commit_edit)
-        entry.bind("<Escape>", cancel_edit)
-        entry.bind("<FocusOut>", cancel_edit)
+        def cancel_edit(e: tk.Event) -> None:
+            edit_frame.destroy()
+            
+        text_widget.bind("<Return>", commit_edit)
+        text_widget.bind("<Escape>", cancel_edit)
+        text_widget.bind("<FocusOut>", cancel_edit)
 
     def trv_tables_double_click(self, event: tk.Event) -> None:
         """
@@ -926,6 +983,7 @@ class FwsSqliteViewerEvent:
 
         # 新規Eventクラスのインスタンス化
         self._fws_sqlite_viewer_history_event_obj = fws_sqlite_viewer_history_event.FwsSqliteViewerHistoryEvent(self._fws_sqlite_viewer_view_obj)
+        self._apply_geometry(self._fws_sqlite_viewer_history_event_obj.view, "history", 600, 400)
         
         # ダイアログの表示
         self._fws_sqlite_viewer_history_event_obj.show_dialog(history)
@@ -964,6 +1022,7 @@ class FwsSqliteViewerEvent:
             # DBノードではテーブル用メニューを無効化
             try:
                 menu.entryconfigure("Create New Table", state="normal", command=lambda a=alias: self._show_create_table_dialog(a))
+                menu.entryconfigure("Select Top 500 Rows", state="disabled")
                 menu.entryconfigure("Generate Recreate Script", state="disabled")
                 menu.entryconfigure("Bulk Insert (Import)", state="disabled")
             except tk.TclError:
@@ -978,6 +1037,7 @@ class FwsSqliteViewerEvent:
             
             try:
                 menu.entryconfigure("Create New Table", state="disabled")
+                menu.entryconfigure("Select Top 500 Rows", state="normal", command=lambda t=table_name, a=alias: self._select_top_500_rows(t, a))
                 menu.entryconfigure("Generate Recreate Script", state="normal", command=lambda t=table_name, a=alias: self._generate_recreate_script(t, a))
                 menu.entryconfigure("Bulk Insert (Import)", state="normal", command=lambda t=table_name, a=alias: self._show_bulk_insert_dialog(t, a))
             except tk.TclError:
@@ -985,6 +1045,18 @@ class FwsSqliteViewerEvent:
                 
             menu.post(event.x_root, event.y_root)
 
+    def _select_top_500_rows(self, table_name: str, alias: str) -> None:
+        """
+        Summary:
+            対象テーブルの上位500件を取得して結果グリッドに表示します。
+        Args:
+            table_name: str - 対象テーブル名
+            alias: str - 対象DBエイリアス
+        Returns:
+            None - 戻り値なし。
+        """
+        sql = f'SELECT * FROM "{alias}"."{table_name}" LIMIT 500;'
+        self._execute_sql(sql)
 
     def _refresh_after_insert(self, table_name: str) -> None:
         """
@@ -995,7 +1067,10 @@ class FwsSqliteViewerEvent:
         """
         current_query = self._fws_sqlite_viewer_view_obj.txt_sql.get("1.0", tk.END).strip()
         if f"FROM {table_name}" in current_query or f"FROM \"{table_name}\"" in current_query:
-            self._execute_query()
+            if hasattr(self, '_last_query_sql') and self._last_query_sql:
+                self._execute_sql(self._last_query_sql)
+            else:
+                self.btn_run_query_click()
 
     def _show_bulk_insert_dialog(self, table_name: str, alias: str) -> None:
         """
@@ -1005,13 +1080,14 @@ class FwsSqliteViewerEvent:
             table_name: str - 対象テーブル名
             alias: str - 対象DBエイリアス
         """
-        fws_sqlite_viewer_bulk_insert_event.FwsSqliteViewerBulkInsertEvent(
+        event_obj = fws_sqlite_viewer_bulk_insert_event.FwsSqliteViewerBulkInsertEvent(
             parent_view=self._fws_sqlite_viewer_view_obj,
             table_name=table_name,
             alias=alias,
             logic_obj=self._fws_sqlite_viewer_logic_obj,
             on_success_callback=self._refresh_after_insert
         )
+        self._apply_geometry(event_obj._view.dlg, "bulk_insert", 600, 400)
 
     def _show_create_table_dialog(self, alias: str) -> None:
         """
@@ -1029,11 +1105,12 @@ class FwsSqliteViewerEvent:
                 tk.messagebox.showinfo("Success", "Table created successfully.", parent=self._fws_sqlite_viewer_view_obj)
                 self._refresh_db_tables()
 
-        fws_sqlite_viewer_create_table_event.FwsSqliteViewerCreateTableEvent(
+        event_obj = fws_sqlite_viewer_create_table_event.FwsSqliteViewerCreateTableEvent(
             master=self._fws_sqlite_viewer_view_obj,
             alias=alias,
             on_success_callback=on_create_success
         )
+        self._apply_geometry(event_obj.view, "create_table", 600, 400)
 
     def _refresh_db_tables(self) -> None:
         """
@@ -1120,8 +1197,76 @@ class FwsSqliteViewerEvent:
                 elif name != "temp" and file:
                     attached_dbs.append({"alias": name, "path": file})
                     
+            if self._fws_sqlite_viewer_view_obj.winfo_exists():
+                geom_str = self._fws_sqlite_viewer_view_obj.geometry()
+                m = re.match(r"^(\d+)x(\d+)", geom_str)
+                if m:
+                    self._geometry_data["main"] = f"{m.group(1)}x{m.group(2)}"
+
             with open(self._session_file, "w", encoding="utf-8") as f:
-                json.dump({"main_db": main_db, "attached_dbs": attached_dbs}, f, indent=2)
+                json.dump({
+                    "main_db": main_db, 
+                    "attached_dbs": attached_dbs,
+                    "geometry": self._geometry_data
+                }, f, indent=2)
         except Exception as e:
             print(f"Error saving session: {e}")
+
+    def _apply_geometry(self, window: tk.Toplevel | tk.Tk, window_name: str, default_width: int, default_height: int) -> None:
+        """
+        Summary:
+            指定されたウィンドウのサイズを復元またはデフォルトにし、
+            メイン画面ならOS任せ、子画面なら親画面の中央に配置します。
+            閉じられる際に最新のサイズのみを保存するようにバインドします。
+        Args:
+            window: tk.Toplevel | tk.Tk - 対象のウィンドウ。
+            window_name: str - 保存用のキー名。
+            default_width: int - デフォルトの幅。
+            default_height: int - デフォルトの高さ。
+        """
+        geom_dict = getattr(self, "_geometry_data", {})
+        saved_geom = geom_dict.get(window_name)
+        
+        width, height = default_width, default_height
+        if saved_geom:
+            m = re.match(r"^(\d+)x(\d+)", saved_geom)
+            if m:
+                width, height = int(m.group(1)), int(m.group(2))
+                
+        if window_name == "main":
+            # メイン画面はサイズのみ指定（位置はOS標準）
+            window.geometry(f"{width}x{height}")
+        else:
+            # 子画面は親の中央に配置
+            parent = self._fws_sqlite_viewer_view_obj
+            parent.update_idletasks()
+            x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (width // 2)
+            y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (height // 2)
+            x = max(0, x)
+            y = max(0, y)
+            window.geometry(f"{width}x{height}+{x}+{y}")
+            
+        def on_destroy(event: tk.Event) -> None:
+            if event.widget == window:
+                geom_str = window.geometry()
+                m = re.match(r"^(\d+)x(\d+)", geom_str)
+                if m:
+                    geom_dict[window_name] = f"{m.group(1)}x{m.group(2)}"
+                self._geometry_data = geom_dict
+                
+        window.bind("<Destroy>", on_destroy, "+")
+
+    def _toggle_topmost(self) -> None:
+        """
+        Summary:
+            最前面固定の切り替えを行います。
+        """
+        self._fws_sqlite_viewer_view_obj.attributes("-topmost", self._fws_sqlite_viewer_view_obj.var_topmost.get())
+
+    def _change_alpha(self, event: tk.Event = None) -> None:
+        """
+        Summary:
+            ウィンドウの透過率を変更します。
+        """
+        self._fws_sqlite_viewer_view_obj.attributes("-alpha", self._fws_sqlite_viewer_view_obj.scl_alpha.get())
     #endregion

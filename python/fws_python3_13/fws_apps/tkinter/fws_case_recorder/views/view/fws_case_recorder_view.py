@@ -33,7 +33,7 @@ class FwsCaseRecorderView(tk.Tk):
         super().__init__()
 
         self.title(f"{fws_case_recorder_const.WINDOW_TITLE} v{fws_case_recorder_const.APP_VERSION}")
-        self.geometry(f"{fws_case_recorder_const.WINDOW_DEFAULT_WIDTH}x{fws_case_recorder_const.WINDOW_DEFAULT_HEIGHT}+0+0")
+        self.geometry(f"{fws_case_recorder_const.WINDOW_DEFAULT_WIDTH}x{fws_case_recorder_const.WINDOW_DEFAULT_HEIGHT}")
         self.minsize(fws_case_recorder_const.WINDOW_MIN_WIDTH, fws_case_recorder_const.WINDOW_MIN_HEIGHT)
 
         # フォント設定

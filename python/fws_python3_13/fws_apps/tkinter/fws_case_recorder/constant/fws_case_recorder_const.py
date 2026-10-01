@@ -17,7 +17,7 @@ PROJECT_ROOT: Path = APP_DIR.parent.parent.parent
 """Path - プロジェクトルートディレクトリ"""
 
 # アプリケーションのバージョン情報
-APP_VERSION: str = "1.4.1.0"
+APP_VERSION: str = "1.4.2.0"
 """str - アプリケーションのバージョン情報"""
 
 # データベース関連
@@ -36,6 +36,11 @@ DDL_FILE_NAME: str = "fws_case_recorder_ddl.sql"
 DDL_PATH: Path = DATA_DIR / DDL_FILE_NAME
 """Path - DDLファイルのフルパス"""
 
+# セッション管理関連
+SESSION_FILE_NAME: str = "session.json"
+"""str - セッションファイル名"""
+SESSION_PATH: Path = DATA_DIR / SESSION_FILE_NAME
+"""Path - セッションファイルのフルパス"""
 # UI定数
 WINDOW_TITLE: str = "案件記録 - fws_case_recorder"
 """str - メインウィンドウのタイトル"""

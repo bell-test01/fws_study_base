@@ -28,7 +28,6 @@ class FwsSqliteViewerBulkInsertView:
         """
         self.dlg = tk.Toplevel(parent)
         self.dlg.title(f"Bulk Insert to {table_name}")
-        self.dlg.geometry("600x400")
         self.dlg.transient(parent)
         self.dlg.grab_set()
 

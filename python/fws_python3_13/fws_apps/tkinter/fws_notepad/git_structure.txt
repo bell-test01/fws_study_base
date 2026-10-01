@@ -1,0 +1,12 @@
+﻿businesses/business/fws_notepad_business.py
+businesses/dto/fws_notepad_dto.py
+businesses/entity/fws_notepad_entity.py
+constant/fws_notepad_const.py
+data/.gitkeep
+docs_fws_notepad/01_architecture_and_spec.md
+fws_notepad.pyw
+output/.gitkeep
+output/memo.txt
+views/event/fws_notepad_event.py
+views/logic/fws_notepad_logic.py
+views/view/fws_notepad_view.py

@@ -31,7 +31,6 @@ class FwsSqliteViewerCreateTableView(tk.Toplevel):
         super().__init__(master)
         
         self.title(f"Create New Table [{alias}]")
-        self.geometry("600x400")
         self.minsize(500, 300)
         self.transient(master)
         self.grab_set()

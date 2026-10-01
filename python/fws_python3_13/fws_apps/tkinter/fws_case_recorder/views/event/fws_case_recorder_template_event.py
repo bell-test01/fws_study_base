@@ -10,7 +10,7 @@ Attachment:
 """
 import tkinter as tk
 from tkinter import messagebox
-from typing import List, Optional
+from typing import List, Optional, Callable
 
 from fws_apps.tkinter.fws_case_recorder.views.view import fws_case_recorder_template_view
 from fws_apps.tkinter.fws_case_recorder.views.logic import fws_case_recorder_template_logic
@@ -25,7 +25,7 @@ class FwsCaseRecorderTemplateEvent:
     """
 
     #region Constructor
-    def __init__(self, master: tk.Tk) -> None:
+    def __init__(self, master: tk.Tk, width: int = 600, height: int = 500, on_close: Optional[Callable] = None) -> None:
         """
         Summary:
             コンストラクタ。
@@ -33,10 +33,14 @@ class FwsCaseRecorderTemplateEvent:
             定型文管理のView・Logicを生成し、イベントを紐付けます。
         Args:
             master: tk.Tk - 親ウィンドウ。
+            width: int - 幅。
+            height: int - 高さ。
+            on_close: Callable - 閉じる際のコールバック。
         Returns:
             None - 戻り値なし。
         """
-        self._fws_case_recorder_template_view_obj: fws_case_recorder_template_view.FwsCaseRecorderTemplateView = fws_case_recorder_template_view.FwsCaseRecorderTemplateView(master)
+        self._on_close = on_close
+        self._fws_case_recorder_template_view_obj: fws_case_recorder_template_view.FwsCaseRecorderTemplateView = fws_case_recorder_template_view.FwsCaseRecorderTemplateView(master, width, height)
         """FwsCaseRecorderTemplateView - ビューオブジェクト"""
 
         self._fws_case_recorder_template_logic_obj: fws_case_recorder_template_logic.FwsCaseRecorderTemplateLogic = fws_case_recorder_template_logic.FwsCaseRecorderTemplateLogic()
@@ -178,6 +182,8 @@ class FwsCaseRecorderTemplateEvent:
         UserAction:
             閉じるボタンクリック - 定型文管理画面が閉じられる。
         """
+        if self._on_close:
+            self._on_close(self._fws_case_recorder_template_view_obj)
         self._fws_case_recorder_template_view_obj.destroy()
 
     def trv_templates_select(self, event: tk.Event) -> None:

@@ -13,6 +13,8 @@ import tkinter as tk
 from functools import partial
 from tkinter import ttk, messagebox
 from typing import List, Dict, Optional
+import json
+from pathlib import Path
 
 from fws_apps.tkinter.fws_case_recorder.views.view import fws_case_recorder_view
 from fws_apps.tkinter.fws_case_recorder.views.event import fws_case_recorder_template_event
@@ -58,6 +60,14 @@ class FwsCaseRecorderEvent:
 
         self._status_timer_id: Optional[str] = None
         """Optional[str] - ステータスバー表示クリア用のタイマーID"""
+
+        self._session_file: Path = fws_case_recorder_const.SESSION_PATH
+        """Path - セッションファイルパス"""
+        self._geometry_data: Dict[str, str] = {}
+        """Dict[str, str] - 画面サイズ情報"""
+
+        self._restore_session()
+        self._apply_geometry("main", self._fws_case_recorder_view_obj, fws_case_recorder_const.WINDOW_DEFAULT_WIDTH, fws_case_recorder_const.WINDOW_DEFAULT_HEIGHT)
 
         self._bind_events()
 
@@ -553,7 +563,22 @@ class FwsCaseRecorderEvent:
         UserAction:
             メニュー「定型文管理」クリック - 定型文管理画面が表示される。
         """
-        self._fws_case_recorder_template_event_obj = fws_case_recorder_template_event.FwsCaseRecorderTemplateEvent(self._fws_case_recorder_view_obj)
+        geom_str = self._geometry_data.get("template")
+        width, height = 600, 500
+        if geom_str:
+            try:
+                width, height = map(int, geom_str.split("x"))
+            except Exception:
+                pass
+        
+        def on_template_close(window: tk.Toplevel) -> None:
+            window.update_idletasks()
+            self._geometry_data["template"] = f"{window.winfo_width()}x{window.winfo_height()}"
+            self._save_session()
+            
+        self._fws_case_recorder_template_event_obj = fws_case_recorder_template_event.FwsCaseRecorderTemplateEvent(
+            self._fws_case_recorder_view_obj, width, height, on_template_close
+        )
 
     def cmb_search_case_key_press(self, event: tk.Event) -> None:
         """
@@ -1061,5 +1086,87 @@ class FwsCaseRecorderEvent:
         Returns:
             None - 戻り値なし。
         """
+        self._save_session()
         self._fws_case_recorder_view_obj.destroy()
+
+    def _restore_session(self) -> None:
+        """
+        Summary:
+            session.json から画面サイズ情報を読み込みます。
+        Description:
+            保存されている geometry データを取得し _geometry_data に格納します。
+        Args:
+            なし
+        Returns:
+            None - 戻り値なし。
+        """
+        if not self._session_file.exists():
+            return
+            
+        try:
+            with open(self._session_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._geometry_data = data.get("geometry", {})
+        except Exception as e:
+            print(f"Error restoring session: {e}")
+
+    def _save_session(self) -> None:
+        """
+        Summary:
+            session.json に現在の画面サイズ情報を保存します。
+        Description:
+            親画面および子画面の幅と高さを geometry として保存します。
+        Args:
+            なし
+        Returns:
+            None - 戻り値なし。
+        """
+        # メイン画面のサイズを更新
+        self._fws_case_recorder_view_obj.update_idletasks()
+        width = self._fws_case_recorder_view_obj.winfo_width()
+        height = self._fws_case_recorder_view_obj.winfo_height()
+        self._geometry_data["main"] = f"{width}x{height}"
+
+        data = {}
+        if self._session_file.exists():
+            try:
+                with open(self._session_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                pass
+
+        data["geometry"] = self._geometry_data
+
+        try:
+            # フォルダがなければ作成
+            self._session_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._session_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Error saving session: {e}")
+
+    def _apply_geometry(self, key: str, window: tk.Toplevel, default_width: int, default_height: int) -> None:
+        """
+        Summary:
+            指定されたウィンドウに保存済みのサイズを適用します。
+        Description:
+            geometry_data からサイズを取得し、設定します。なければデフォルト値を使用します。
+        Args:
+            key: str - geometry_data のキー (例: "main", "template")。
+            window: tk.Toplevel - 対象のウィンドウ。
+            default_width: int - デフォルトの幅。
+            default_height: int - デフォルトの高さ。
+        Returns:
+            None - 戻り値なし。
+        """
+        geom_str = self._geometry_data.get(key)
+        if geom_str:
+            try:
+                # geom_strは "幅x高さ" 形式を期待
+                window.geometry(geom_str)
+            except Exception:
+                window.geometry(f"{default_width}x{default_height}")
+        else:
+            window.geometry(f"{default_width}x{default_height}")
+
     #endregion

@@ -1,2 +1,13 @@
-﻿data/.templateignore
-README.md constant/fws_apps_template_generator_const.py core/fws_apps_template_generator_core.py docs_fws_apps_template_generator/development/issues_and_unimplemented.md docs_fws_apps_template_generator/development/resolved_issues.md docs_fws_apps_template_generator/development/session_handover.md docs_fws_apps_template_generator/development/version_history.md docs_fws_apps_template_generator/final_specification.md fws_apps_template_generator.py git_structure.txt tests/README.md tests/__init__.py tests/run_all_tests.py tests/test_fws_apps_template_generator_core.py
+﻿constant/fws_apps_template_generator_const.py
+core/fws_apps_template_generator_core.py
+data/.templateignore
+docs_fws_apps_template_generator/01_architecture_and_spec.md
+docs_fws_apps_template_generator/02_active_tasks_and_handover.md
+docs_fws_apps_template_generator/03_resolved_archive.md
+fws_apps_template_generator.py
+git_structure.txt
+README.md
+tests/__init__.py
+tests/README.md
+tests/run_all_tests.py
+tests/test_fws_apps_template_generator_core.py

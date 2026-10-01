@@ -64,18 +64,6 @@ class FwsSqliteViewerHistoryEvent:
         Returns:
             None - 戻り値なし。
         """
-        # メインウィンドウの中央に配置
-        width, height = 600, 400
-        parent_x = self.parent_view.winfo_rootx()
-        parent_y = self.parent_view.winfo_rooty()
-        parent_width = self.parent_view.winfo_width()
-        parent_height = self.parent_view.winfo_height()
-        
-        x = parent_x + (parent_width // 2) - (width // 2)
-        y = parent_y + (parent_height // 2) - (height // 2)
-        
-        self.view.geometry(f"{width}x{height}+{x}+{y}")
-        
         # データの取得と流し込み
         formatted_history = self.logic.format_history_for_display(history)
         for query_single_line, rows, tag in formatted_history:
