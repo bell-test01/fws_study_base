@@ -9,7 +9,7 @@ Attachment:
 """
 
 #region constants
-APP_VERSION: str = "1.8.0.0"
+APP_VERSION: str = "1.8.1.0"
 """str - アプリケーション/ライブラリバージョン"""
 
 LIB_VERSION: str = APP_VERSION

@@ -18,11 +18,11 @@ data/init_db.sql
 data/messages.json
 docs_fws_chat_template/01_architecture_and_spec.md
 docs_fws_chat_template/02_active_tasks_and_handover.md
+docs_fws_chat_template/03_resolved_archive.md
 docs_fws_chat_template/implementation_plan.md
 fws_chat_template.pyw
 git_structure.txt
 log/.gitkeep
-output/tmp/.gitkeep
 views/event/fws_event_chat_template.py
 views/logic/fws_logic_chat_template.py
 views/view/component/fws_view_component_chat_template_description_block.py

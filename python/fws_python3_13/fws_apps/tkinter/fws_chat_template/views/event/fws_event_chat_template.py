@@ -725,6 +725,7 @@ class FwsEventChatTemplate:
         Summary:
             チケット入力キー（チケット番号・県域・ビル名）の確定同期処理を行います。
         Description:
+            キーロック中（_is_key_locked が True）の場合は再絞り込み・再読み込みを行わず早期終了します。
             現在の入力値に基づきLogic層から候補一覧を取得し、未入力項目のコンボボックス候補リストおよび内部候補リストを更新します。
             候補が1件のみの未入力項目は自動設定し、3項目すべてが揃った場合は該当チケット情報を読み込んでキーをロックします。
         Args:
@@ -732,6 +733,9 @@ class FwsEventChatTemplate:
         Returns:
             None - 戻り値なし。
         """
+        if self._is_key_locked:
+            return
+
         ticket_number, prefecture, building_name = self._get_ticket_keys()
 
         if not (ticket_number or prefecture or building_name):

@@ -23,7 +23,7 @@ from fws_lib.tkinter.views.logic import fws_logic_lib_event_exception_util
 #------------------------------------------------------------------------------
 # アプリケーション管理値
 #------------------------------------------------------------------------------
-APP_VERSION: str = "0.15.0.1"
+APP_VERSION: str = "0.15.2.0"
 """str - アプリケーションバージョン"""
 APP_NAME_ENGLISH: str = "fws_chat_template"
 """str - アプリケーション英語名称"""

@@ -240,7 +240,11 @@ class FwsViewChatTemplate(tk.Tk):
         self.blk_desc.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(2, 0))
 
         # 機器情報アコーディオンブロック
-        self.blk_device = fws_view_component_lib_accordion_block.FwsViewComponentLibAccordionBlock(self.scr_base_data.content_frame, title="機器情報:")
+        self.blk_device = fws_view_component_lib_accordion_block.FwsViewComponentLibAccordionBlock(
+            self.scr_base_data.content_frame,
+            title="機器情報:",
+            is_expanded=False,
+        )
         self.blk_device.pack(side=tk.TOP, fill=tk.X, padx=5, pady=(5, 5))
 
         # 機器情報テーブルコンポーネント（配置するだけ！）

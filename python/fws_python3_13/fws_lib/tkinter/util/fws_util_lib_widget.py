@@ -159,6 +159,7 @@ def enable_mousewheel_scroll_chain(target_window: tk.Misc) -> None:
     Description:
         マウスポインタ直下のウィジェットから親方向（祖先）へツリーを探索し、
         Textウィジェットの端到達時伝播および直近の親Canvasの自動スクロールを実行します。
+        Canvasスクロール時は現在のyview範囲を確認し、端到達済みまたはスクロール不要時はオーバースクロールを抑止します。
     Args:
         target_window: tk.Misc - イベントをバインドする対象ウィンドウまたはウィジェット。
     Returns:
@@ -180,6 +181,24 @@ def enable_mousewheel_scroll_chain(target_window: tk.Misc) -> None:
             curr = getattr(curr, "master", None)
         return None
 
+    def _scroll_canvas(canvas: tk.Canvas, scroll_units: int) -> None:
+        """
+        Summary:
+            Canvasの現在位置を確認した上で垂直スクロールを実行します。
+        Description:
+            yview() の表示範囲を確認し、上端または下端に到達済み（スクロール不要時を含む）の場合は
+            yview_scroll を実行せず、マイナス座標等への不要なスクロールを抑止します。
+        Args:
+            canvas: tk.Canvas - スクロール対象のCanvasウィジェット。
+            scroll_units: int - スクロール量（負で上方向、正で下方向）。
+        Returns:
+            None - 戻り値なし。
+        """
+        c_top, c_bottom = canvas.yview()
+        if (scroll_units < 0 and c_top <= 0.0) or (scroll_units > 0 and c_bottom >= 1.0):
+            return
+        canvas.yview_scroll(scroll_units, "units")
+
     def _on_mousewheel(event: Any) -> Optional[str]:
         if not hasattr(event, "delta") or event.delta == 0:
             return None
@@ -197,16 +216,11 @@ def enable_mousewheel_scroll_chain(target_window: tk.Misc) -> None:
         if text_widget is not None:
             try:
                 top, bottom = text_widget.yview()
-                if scroll_units < 0 and top <= 0.001:
-                    # 上端到達: 親方向のCanvasへバブリング伝播
+                if (scroll_units < 0 and top <= 0.001) or (scroll_units > 0 and bottom >= 0.999):
+                    # 端到達: 親方向のCanvasへバブリング伝播
                     parent_canvas = _find_ancestor_canvas(getattr(text_widget, "master", None))
                     if parent_canvas is not None:
-                        parent_canvas.yview_scroll(scroll_units, "units")
-                elif scroll_units > 0 and bottom >= 0.999:
-                    # 下端到達: 親方向のCanvasへバブリング伝播
-                    parent_canvas = _find_ancestor_canvas(getattr(text_widget, "master", None))
-                    if parent_canvas is not None:
-                        parent_canvas.yview_scroll(scroll_units, "units")
+                        _scroll_canvas(parent_canvas, scroll_units)
                 else:
                     text_widget.yview_scroll(scroll_units, "units")
                 return "break"
@@ -217,7 +231,7 @@ def enable_mousewheel_scroll_chain(target_window: tk.Misc) -> None:
         canvas_widget = _find_ancestor_canvas(target_widget)
         if canvas_widget is not None:
             try:
-                canvas_widget.yview_scroll(scroll_units, "units")
+                _scroll_canvas(canvas_widget, scroll_units)
                 return "break"
             except Exception:
                 pass

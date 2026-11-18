@@ -88,14 +88,17 @@ class FwsViewComponentLibScrollableFrame(ttk.Frame):
         Summary:
             イベントバインドを行います。
         Description:
-            コンテンツフレームおよびCanvasの <Configure> イベント、ならびにマウスホイールスクロールチェーンを設定します。
+            コンテンツフレームの <Configure>・<Unmap> イベント、Canvasの <Configure>・<Expose> イベント、
+            ならびにマウスホイールスクロールチェーンを設定します。
         Args:
             なし
         Returns:
             None - 戻り値なし。
         """
         self.content_frame.bind("<Configure>", self._on_content_configure)
+        self.content_frame.bind("<Unmap>", self._on_content_configure)
         self._cvs_scroll.bind("<Configure>", self._on_canvas_configure)
+        self._cvs_scroll.bind("<Expose>", self._on_content_configure)
         fws_util_lib_widget.enable_mousewheel_scroll_chain(self)
     #endregion
 
@@ -131,22 +134,23 @@ class FwsViewComponentLibScrollableFrame(ttk.Frame):
     def _on_content_configure(self, event: Any) -> None:
         """
         Summary:
-            コンテンツフレームのリサイズイベント処理を行います。
+            コンテンツフレームのリサイズおよび状態変化イベント処理を行います。
         Description:
-            子ウィジェット追加等によるコンテンツサイズの変化に応じて、Canvasのスクロール領域（scrollregion）を更新します。
+            子ウィジェット追加・折りたたみ等によるコンテンツサイズや表示状態の変化に応じて、
+            Canvasのスクロール領域（scrollregion）および表示位置を同期します。
         Args:
             event: Any - イベントオブジェクト。
         Returns:
             None - 戻り値なし。
         """
-        self._cvs_scroll.configure(scrollregion=self._cvs_scroll.bbox("all"))
+        self._sync_scrollregion()
 
     def _on_canvas_configure(self, event: Any) -> None:
         """
         Summary:
             Canvasのリサイズイベント処理を行います。
         Description:
-            Canvasの横幅変更に追従してコンテンツフレームの幅を更新します。
+            Canvasの横幅変更に追従してコンテンツフレームの幅を更新し、スクロール領域を同期します。
             縦幅は内部ウィジェットの自動計算（シュリンクラップ）に委ねるため明示指定しません。
         Args:
             event: Any - イベントオブジェクト。
@@ -157,5 +161,29 @@ class FwsViewComponentLibScrollableFrame(ttk.Frame):
             self._cvs_window_id,
             width=event.width,
         )
+        self._sync_scrollregion()
+
+    def _sync_scrollregion(self) -> None:
+        """
+        Summary:
+            Canvasのスクロール領域と表示位置を同期します。
+        Description:
+            Canvas全体の境界ボックス（bbox）と現在の scrollregion を比較し、
+            差分がある場合のみ scrollregion を更新します。
+            また、コンテンツ高さがCanvas高さ以下に収まっている状態で表示位置が先頭からずれている場合は先頭へ補正します。
+        Args:
+            なし
+        Returns:
+            None - 戻り値なし。
+        """
+        bbox: tuple[int, int, int, int] | None = self._cvs_scroll.bbox("all")
+        if bbox is None:
+            return
+        target_scrollregion: str = f"{bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}"
+        if str(self._cvs_scroll.cget("scrollregion")) != target_scrollregion:
+            self._cvs_scroll.configure(scrollregion=bbox)
+        canvas_h: int = self._cvs_scroll.winfo_height()
+        if canvas_h > 1 and (bbox[3] - bbox[1]) <= canvas_h and self._cvs_scroll.canvasy(0) != 0.0:
+            self._cvs_scroll.yview_moveto(0.0)
     #endregion
 #endregion
