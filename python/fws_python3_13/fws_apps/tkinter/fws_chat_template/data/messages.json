@@ -1,0 +1,7 @@
+{
+  "MSG_STATUS_READY": "待機中",
+  "MSG_STATUS_COMPARING": "WinMergeを起動しました。",
+  "MSG_ERR_WINMERGE_NOT_FOUND": "WinMergeの実行ファイルが見つかりません。設定タブのパスを確認してください。",
+  "MSG_ERR_COMPARE_NO_DB_RECORD": "比較対象となる保存済みデータがデータベースに存在しません。",
+  "MSG_ERR_INVALID_FONT_SIZE": "フォントサイズには 6〜32 の正の整数値を入力してください。"
+}

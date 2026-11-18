@@ -57,8 +57,10 @@ Thumbs.db
 **/data/*
 !**/data/.gitkeep
 !**/data/*.sql
+!**/data/messages.json
 **/output/*
 !**/output/.gitkeep
+**/output/tmp/
 
 # 自動生成ドキュメント
 **/docs/
